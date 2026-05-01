@@ -1,9 +1,7 @@
 import { loggerService } from '@logger'
-import { updateOneBlock } from '@renderer/store/messageBlock'
 import { WebSearchSource } from '@renderer/types'
 import { CitationMessageBlock, MessageBlock, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import { createMainTextBlock } from '@renderer/utils/messageUtils/create'
-import { hasLocalizableImages, localizeMarkdownImages } from '@renderer/utils/markdown'
 
 import { BlockManager } from '../BlockManager'
 
@@ -11,14 +9,13 @@ const logger = loggerService.withContext('TextCallbacks')
 
 interface TextCallbacksDependencies {
   blockManager: BlockManager
-  dispatch: any
   getState: any
   assistantMsgId: string
   getCitationBlockId: () => string | null
 }
 
 export const createTextCallbacks = (deps: TextCallbacksDependencies) => {
-  const { blockManager, dispatch, getState, assistantMsgId, getCitationBlockId } = deps
+  const { blockManager, getState, assistantMsgId, getCitationBlockId } = deps
 
   // 内部维护的状态
   let mainTextBlockId: string | null = null
@@ -59,22 +56,14 @@ export const createTextCallbacks = (deps: TextCallbacksDependencies) => {
 
     onTextComplete: async (finalText: string) => {
       if (mainTextBlockId) {
-        const blockId = mainTextBlockId
         const changes = {
           content: finalText,
           status: MessageBlockStatus.SUCCESS
         }
         blockManager.smartBlockUpdate(mainTextBlockId, changes, MessageBlockType.MAIN_TEXT, true)
         mainTextBlockId = null
-
-        // Fire-and-forget: 流完成后本地化 markdown 中的图片
-        if (hasLocalizableImages(finalText)) {
-          localizeMarkdownImages(finalText).then(({ content: localizedContent }) => {
-            if (localizedContent !== finalText) {
-              dispatch(updateOneBlock({ id: blockId, changes: { content: localizedContent } as Partial<MessageBlock> }))
-            }
-          })
-        }
+        // 图片本地化不在流式回调中处理，由 MainTextBlock 组件的 useEffect 负责
+        // 这样避免阻塞流式管道、避免重复下载
       } else {
         logger.warn(
           `[onTextComplete] Received text.complete but last block was not MAIN_TEXT (was ${blockManager.lastBlockType}) or lastBlockId is null.`

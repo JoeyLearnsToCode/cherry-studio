@@ -57,7 +57,6 @@ export const createCallbacks = (deps: CallbacksDependencies) => {
   // 创建textCallbacks时传入citationCallbacks的getCitationBlockId方法
   const textCallbacks = createTextCallbacks({
     blockManager,
-    dispatch,
     getState,
     assistantMsgId,
     getCitationBlockId: citationCallbacks.getCitationBlockId

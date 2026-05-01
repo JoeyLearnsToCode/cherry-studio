@@ -1,5 +1,6 @@
 import { loggerService } from '@logger'
 import ImageViewer from '@renderer/components/ImageViewer'
+import db from '@renderer/databases'
 import FileManager from '@renderer/services/FileManager'
 import { useAppStore } from '@renderer/store'
 import { updateOneBlock } from '@renderer/store/messageBlock'
@@ -54,8 +55,10 @@ function getImageSources(block: ImageMessageBlock): string[] {
 const ImageBlock: React.FC<Props> = ({ block, isSingle = false }) => {
   const store = useAppStore()
   const downloadAttempted = useRef(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Incremental download: try to download images that are still remote
+  // 图片本地化：流完成后或重新打开聊天时，检测并下载远程图片到本地
+  // 使用短延迟避免与 imageCallbacks.onImageGenerated 的并发下载（产生重复文件）
   useEffect(() => {
     if (downloadAttempted.current) return
     if (block.status !== MessageBlockStatus.STREAMING && block.status !== MessageBlockStatus.SUCCESS) return
@@ -75,39 +78,63 @@ const ImageBlock: React.FC<Props> = ({ block, isSingle = false }) => {
     if (missingIndices.length === 0) return
 
     downloadAttempted.current = true
+    // 短延迟：让 imageCallbacks.onImageGenerated 的后台下载先完成
+    // 如果 onImageGenerated 已更新 localFiles，missingIndices 为空，不会重复下载
+    timerRef.current = setTimeout(() => {
+      // 重新获取最新的 block 状态
+      const latestBlock = store.getState().messageBlocks.entities[block.id] as ImageMessageBlock | undefined
+      if (!latestBlock?.metadata?.generateImageResponse?.images?.length) return
 
-    ;(async () => {
-      const newLocalFiles: (FileMetadata | null)[] = [...(localFiles || generateImages.map(() => null))]
+      const latestLocalFiles = latestBlock.metadata?.localFiles
+      const latestMissingIndices: number[] = []
+      latestBlock.metadata.generateImageResponse.images.forEach((_, index) => {
+        if (!latestLocalFiles?.[index]) {
+          latestMissingIndices.push(index)
+        }
+      })
 
-      const results = await Promise.all(
-        missingIndices.map(async (index) => {
-          const file = await downloadImageToLocal(generateImages[index])
+      if (latestMissingIndices.length === 0) return
+
+      const newLocalFiles: (FileMetadata | null)[] = [
+        ...(latestLocalFiles || latestBlock.metadata.generateImageResponse.images.map(() => null))
+      ]
+
+      Promise.all(
+        latestMissingIndices.map(async (index) => {
+          const file = await downloadImageToLocal(latestBlock.metadata!.generateImageResponse!.images[index])
           return { index, file }
         })
-      )
-
-      let hasUpdate = false
-      for (const { index, file } of results) {
-        if (file) {
-          newLocalFiles[index] = file
-          hasUpdate = true
+      ).then((results) => {
+        let hasUpdate = false
+        for (const { index, file } of results) {
+          if (file) {
+            newLocalFiles[index] = file
+            hasUpdate = true
+          }
         }
-      }
 
-      if (hasUpdate) {
-        store.dispatch(
-          updateOneBlock({
-            id: block.id,
-            changes: {
-              metadata: {
-                ...metadata,
-                localFiles: newLocalFiles
-              }
-            } as Partial<ImageMessageBlock>
-          })
-        )
+        if (hasUpdate) {
+          const updatedMetadata = { ...latestBlock.metadata, localFiles: newLocalFiles }
+          store.dispatch(
+            updateOneBlock({
+              id: block.id,
+              changes: {
+                metadata: updatedMetadata
+              } as Partial<ImageMessageBlock>
+            })
+          )
+          // 持久化到 Dexie，确保重启后不需要重新下载
+          db.message_blocks.update(block.id, { metadata: updatedMetadata } as any).catch(() => {})
+        }
+      })
+    }, 1000)
+
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current)
+        timerRef.current = null
       }
-    })()
+    }
   }, [block.id, block.metadata, block.status, store])
 
   if (block.status === MessageBlockStatus.PENDING) {

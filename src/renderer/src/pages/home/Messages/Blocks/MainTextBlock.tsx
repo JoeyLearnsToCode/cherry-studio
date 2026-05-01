@@ -3,6 +3,7 @@ import { getModelUniqId } from '@renderer/services/ModelService'
 import { useAppStore } from '@renderer/store'
 import { updateOneBlock, selectFormattedCitationsByBlockId } from '@renderer/store/messageBlock'
 import { type Model } from '@renderer/types'
+import db from '@renderer/databases'
 import type { MainTextMessageBlock, Message, MessageBlock } from '@renderer/types/newMessage'
 import { MessageBlockStatus } from '@renderer/types/newMessage'
 import { determineCitationSource, withCitationTags } from '@renderer/utils/citation'
@@ -28,7 +29,8 @@ const MainTextBlock: React.FC<Props> = ({ block, citationBlockId, role, mentions
 
   const rawCitations = useSelector((state: any) => selectFormattedCitationsByBlockId(state, citationBlockId))
 
-  // 增量下载：打开聊天时检测 content 中仍有远程/base64 图片，后台下载替换
+  // 图片本地化：流完成后或重新打开聊天时，检测并下载远程/base64 图片到本地
+  // 仅执行一次，同时更新 Redux + Dexie，确保重启后不重复替换
   useEffect(() => {
     if (downloadAttempted.current) return
     if (block.status !== MessageBlockStatus.SUCCESS) return
@@ -38,9 +40,8 @@ const MainTextBlock: React.FC<Props> = ({ block, citationBlockId, role, mentions
     const originalContent = block.content
     localizeMarkdownImages(originalContent).then(({ content: localizedContent }) => {
       if (localizedContent !== originalContent) {
-        store.dispatch(
-          updateOneBlock({ id: block.id, changes: { content: localizedContent } as Partial<MessageBlock> })
-        )
+        store.dispatch(updateOneBlock({ id: block.id, changes: { content: localizedContent } as Partial<MessageBlock> }))
+        db.message_blocks.update(block.id, { content: localizedContent } as any).catch(() => {})
       }
     })
   }, [block.id, block.content, block.status, store])

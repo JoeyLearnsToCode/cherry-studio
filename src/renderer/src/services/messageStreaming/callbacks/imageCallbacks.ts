@@ -1,4 +1,5 @@
 import { loggerService } from '@logger'
+import db from '@renderer/databases'
 import { FileMetadata } from '@renderer/types'
 import { ImageMessageBlock, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import { createImageBlock } from '@renderer/utils/messageUtils/create'
@@ -84,10 +85,15 @@ export const createImageCallbacks = (deps: ImageCallbacksDependencies) => {
           Promise.all(images.map(downloadImageToLocal)).then((localFiles) => {
             const hasLocal = localFiles.some((f) => f !== null)
             if (hasLocal) {
+              const updatedMetadata = { generateImageResponse: imageData, localFiles }
               const updateChanges: Partial<ImageMessageBlock> = {
-                metadata: { generateImageResponse: imageData, localFiles }
+                metadata: updatedMetadata
               }
               blockManager.smartBlockUpdate(blockId, updateChanges, MessageBlockType.IMAGE, true)
+              // 持久化到 Dexie，确保重启后不需要重新下载
+              db.message_blocks.update(blockId, { metadata: updatedMetadata } as any).catch((err) => {
+                logger.error('Failed to persist image localFiles to DB:', err as Error)
+              })
             }
           })
         }
