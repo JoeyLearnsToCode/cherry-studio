@@ -157,13 +157,15 @@ export abstract class OpenAIBaseClient<
         dangerouslyAllowBrowser: true,
         apiKey: apiKeyForSdkInstance,
         apiVersion: this.provider.apiVersion,
-        endpoint: this.provider.apiHost
+        endpoint: this.provider.apiHost,
+        maxRetries: 0
       }) as TSdkInstance
     } else {
       this.sdkInstance = new OpenAI({
         dangerouslyAllowBrowser: true,
         apiKey: apiKeyForSdkInstance,
         baseURL: this.getBaseURL(),
+        maxRetries: 0,
         defaultHeaders: {
           ...this.defaultHeaders(),
           ...this.provider.extra_headers,

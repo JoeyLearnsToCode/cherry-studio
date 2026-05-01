@@ -129,13 +129,15 @@ export class OpenAIResponseAPIClient extends OpenAIBaseClient<
         dangerouslyAllowBrowser: true,
         apiKey: this.apiKey,
         apiVersion: this.provider.apiVersion,
-        baseURL: this.provider.apiHost
+        baseURL: this.provider.apiHost,
+        maxRetries: 0
       })
     } else {
       return new OpenAI({
         dangerouslyAllowBrowser: true,
         apiKey: this.apiKey,
         baseURL: this.getBaseURL(),
+        maxRetries: 0,
         defaultHeaders: {
           ...this.defaultHeaders(),
           ...this.provider.extra_headers
