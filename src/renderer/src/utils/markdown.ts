@@ -1,9 +1,13 @@
+import FileManager from '@renderer/services/FileManager'
+import { loggerService } from '@logger'
 import remarkParse from 'remark-parse'
 import remarkStringify from 'remark-stringify'
 import removeMarkdown from 'remove-markdown'
 import { unified } from 'unified'
 import type { Point, Position } from 'unist'
 import { visit } from 'unist-util-visit'
+
+const logger = loggerService.withContext('MarkdownUtils')
 
 /**
  * 更彻底的查找方法，递归搜索所有子元素
@@ -329,4 +333,87 @@ export const purifyMarkdownImages = (markdown: string): string => {
     /(!\[[^\]]*\]\()\s*data:image\/[\w+.-]+;base64\s*,[\w+/=]+(?:\s*[\w+/=]+)*\s*\)/gi,
     '$1image_url)'
   )
+}
+
+/**
+ * 判断 markdown 文本中是否包含需要本地化的图片（base64 或远程 URL）
+ */
+export const hasLocalizableImages = (markdown: string): boolean => {
+  if (!markdown) return false
+  const imageRegex = /!\[[^\]]*\]\(([^)]+)\)/g
+  let match: RegExpExecArray | null
+  while ((match = imageRegex.exec(markdown)) !== null) {
+    const src = match[1].trim()
+    if (src.startsWith('data:image/') || src.startsWith('http://') || src.startsWith('https://')) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * 将 markdown 中的远程/base64 图片下载到本地，替换为 file:/// 路径
+ *
+ * 仅在文本流完成后调用，不在 SSE 实时流中调用。
+ * 下载失败时保留原始链接（降级）。
+ *
+ * @param markdown 包含图片的 Markdown 文本
+ * @returns 替换后的 Markdown 文本和下载的文件元数据
+ */
+export const localizeMarkdownImages = async (
+  markdown: string
+): Promise<{ content: string; files: Map<string, string> }> => {
+  if (!markdown) return { content: markdown, files: new Map() }
+
+  const imageRegex = /(!\[[^\]]*\]\()([^)]+)(\))/g
+  const matches: { fullMatch: string; prefix: string; src: string; suffix: string }[] = []
+  let match: RegExpExecArray | null
+
+  while ((match = imageRegex.exec(markdown)) !== null) {
+    const src = match[2].trim()
+    // 只处理 base64 和远程 URL 图片，跳过已经是本地文件的
+    if (
+      (src.startsWith('data:image/') || src.startsWith('http://') || src.startsWith('https://')) &&
+      !src.startsWith('file://')
+    ) {
+      matches.push({
+        fullMatch: match[0],
+        prefix: match[1],
+        src,
+        suffix: match[3]
+      })
+    }
+  }
+
+  if (matches.length === 0) return { content: markdown, files: new Map() }
+
+  // 并行下载所有图片
+  const results = await Promise.all(
+    matches.map(async (m) => {
+      try {
+        const file = m.src.startsWith('data:')
+          ? await window.api.file.saveBase64ImageLocal(m.src)
+          : await window.api.file.downloadImage(m.src)
+        if (file) {
+          const localPath = `file://${FileManager.getFilePath(file)}`
+          return { match: m, localPath, file }
+        }
+      } catch (error) {
+        logger.error('Failed to localize image, keeping original:', error as Error)
+      }
+      return { match: m, localPath: null, file: null }
+    })
+  )
+
+  // 替换成功下载的图片链接
+  let result = markdown
+  const files = new Map<string, string>() // originalSrc -> localPath
+  for (const { match: m, localPath, file } of results) {
+    if (localPath && file) {
+      result = result.replace(m.fullMatch, `${m.prefix}${localPath}${m.suffix}`)
+      files.set(m.src, localPath)
+    }
+  }
+
+  return { content: result, files }
 }
