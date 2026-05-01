@@ -1,4 +1,3 @@
-import FileManager from '@renderer/services/FileManager'
 import { loggerService } from '@logger'
 import remarkParse from 'remark-parse'
 import remarkStringify from 'remark-stringify'
@@ -337,6 +336,7 @@ export const purifyMarkdownImages = (markdown: string): string => {
 
 /**
  * 判断 markdown 文本中是否包含需要本地化的图片（base64 或远程 URL）
+ * 已本地化的图片使用 local-file: 前缀，不再视为需要本地化
  */
 export const hasLocalizableImages = (markdown: string): boolean => {
   if (!markdown) return false
@@ -344,7 +344,10 @@ export const hasLocalizableImages = (markdown: string): boolean => {
   let match: RegExpExecArray | null
   while ((match = imageRegex.exec(markdown)) !== null) {
     const src = match[1].trim()
-    if (src.startsWith('data:image/') || src.startsWith('http://') || src.startsWith('https://')) {
+    if (
+      (src.startsWith('data:image/') || src.startsWith('http://') || src.startsWith('https://')) &&
+      !src.startsWith('local-file:')
+    ) {
       return true
     }
   }
@@ -352,7 +355,10 @@ export const hasLocalizableImages = (markdown: string): boolean => {
 }
 
 /**
- * 将 markdown 中的远程/base64 图片下载到本地，替换为 file:/// 路径
+ * 将 markdown 中的远程/base64 图片下载到本地，替换为 local-file: 虚拟路径标记
+ *
+ * 替换后的格式为 `local-file:{fileId}{ext}`（如 `local-file:20260501165907_t86TkQ.png`），
+ * 渲染时由 urlTransform 动态解析为 `file://{filesPath}/{fileId}{ext}`。
  *
  * 仅在文本流完成后调用，不在 SSE 实时流中调用。
  * 下载失败时保留原始链接（降级）。
@@ -371,10 +377,10 @@ export const localizeMarkdownImages = async (
 
   while ((match = imageRegex.exec(markdown)) !== null) {
     const src = match[2].trim()
-    // 只处理 base64 和远程 URL 图片，跳过已经是本地文件的
+    // 只处理 base64 和远程 URL 图片，跳过已经本地化的
     if (
       (src.startsWith('data:image/') || src.startsWith('http://') || src.startsWith('https://')) &&
-      !src.startsWith('file://')
+      !src.startsWith('local-file:')
     ) {
       matches.push({
         fullMatch: match[0],
@@ -395,7 +401,8 @@ export const localizeMarkdownImages = async (
           ? await window.api.file.saveBase64ImageLocal(m.src)
           : await window.api.file.downloadImage(m.src)
         if (file) {
-          const localPath = `file://${FileManager.getFilePath(file)}`
+          // 使用 local-file: 虚拟标记，不硬编码绝对路径
+          const localPath = `local-file:${file.id}${file.ext}`
           return { match: m, localPath, file }
         }
       } catch (error) {

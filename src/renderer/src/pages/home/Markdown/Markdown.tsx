@@ -7,6 +7,7 @@ import ImageViewer from '@renderer/components/ImageViewer'
 import MarkdownShadowDOMRenderer from '@renderer/components/MarkdownShadowDOMRenderer'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { useSmoothStream } from '@renderer/hooks/useSmoothStream'
+import FileManager from '@renderer/services/FileManager'
 import type { MainTextMessageBlock, ThinkingMessageBlock, TranslationMessageBlock } from '@renderer/types/newMessage'
 import { removeSvgEmptyLines } from '@renderer/utils/formats'
 import { processLatexBrackets } from '@renderer/utils/markdown'
@@ -145,7 +146,19 @@ const Markdown: FC<Props> = ({ block, postProcess }) => {
   }
 
   const urlTransform = useCallback((value: string) => {
-    if (value.startsWith('data:image/png') || value.startsWith('data:image/jpeg')) return value
+    // local-file:{fileId}{ext} → file://{filesPath}/{fileId}{ext}
+    if (value.startsWith('local-file:')) {
+      const fileName = value.slice('local-file:'.length)
+      // 从文件名提取 fileId 和 ext: "20260501165907_t86TkQ.png" → id="20260501165907_t86TkQ", ext=".png"
+      const dotIndex = fileName.lastIndexOf('.')
+      if (dotIndex > 0) {
+        const id = fileName.slice(0, dotIndex)
+        const ext = fileName.slice(dotIndex) // 包含点号
+        const filePath = FileManager.getFilePath({ id, ext } as any)
+        return `file://${filePath}`
+      }
+    }
+    if (value.startsWith('data:image/')) return value
     return defaultUrlTransform(value)
   }, [])
 
