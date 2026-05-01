@@ -100,6 +100,7 @@ export interface ImageMessageBlock extends BaseMessageBlock {
     prompt?: string
     negativePrompt?: string
     generateImageResponse?: GenerateImageResponse
+    localFiles?: (FileMetadata | null)[] // Parallel to generateImageResponse.images, null = not downloaded yet
   }
 }
 

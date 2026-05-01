@@ -585,6 +585,108 @@ class FileStorage {
     }
   }
 
+  private generateLocalImageName(ext: string): string {
+    const now = new Date()
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const timestamp = [
+      now.getFullYear(),
+      pad(now.getMonth() + 1),
+      pad(now.getDate()),
+      pad(now.getHours()),
+      pad(now.getMinutes()),
+      pad(now.getSeconds())
+    ].join('')
+    const random = crypto.randomBytes(4).toString('base64url').slice(0, 8)
+    return `${timestamp}_${random}${ext}`
+  }
+
+  public downloadImageToLocal = async (
+    _: Electron.IpcMainInvokeEvent,
+    url: string
+  ): Promise<FileMetadata> => {
+    try {
+      const response = await net.fetch(url)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const contentType = response.headers.get('Content-Type')
+      const ext = this.getExtensionFromMimeType(contentType)
+      const fileName = this.generateLocalImageName(ext)
+      const destPath = path.join(this.storageDir, fileName)
+
+      const buffer = Buffer.from(await response.arrayBuffer())
+      await fs.promises.writeFile(destPath, buffer)
+
+      const stats = await fs.promises.stat(destPath)
+      const fileType = getFileType(ext)
+
+      return {
+        id: path.basename(fileName, ext),
+        origin_name: fileName,
+        name: fileName,
+        path: destPath,
+        created_at: stats.birthtime.toISOString(),
+        size: stats.size,
+        ext: ext,
+        type: fileType,
+        count: 1
+      }
+    } catch (error) {
+      logger.error('Download image to local error:', error as Error)
+      throw error
+    }
+  }
+
+  public saveBase64ImageToLocal = async (
+    _: Electron.IpcMainInvokeEvent,
+    base64Data: string
+  ): Promise<FileMetadata> => {
+    try {
+      if (!base64Data) {
+        throw new Error('Base64 data is required')
+      }
+
+      const base64String = base64Data.replace(/^data:.*;base64,/, '')
+
+      // Detect extension from data URI prefix
+      const mimeMatch = base64Data.match(/^data:(image\/\w+);base64,/)
+      let ext = '.png'
+      if (mimeMatch) {
+        const mimeExt = this.getExtensionFromMimeType(mimeMatch[1])
+        ext = mimeExt
+      }
+
+      const buffer = Buffer.from(base64String, 'base64')
+      const fileName = this.generateLocalImageName(ext)
+      const destPath = path.join(this.storageDir, fileName)
+
+      if (!fs.existsSync(this.storageDir)) {
+        fs.mkdirSync(this.storageDir, { recursive: true })
+      }
+
+      await fs.promises.writeFile(destPath, buffer)
+
+      const stats = await fs.promises.stat(destPath)
+      const fileType = getFileType(ext)
+
+      return {
+        id: path.basename(fileName, ext),
+        origin_name: fileName,
+        name: fileName,
+        path: destPath,
+        created_at: stats.birthtime.toISOString(),
+        size: stats.size,
+        ext: ext,
+        type: fileType,
+        count: 1
+      }
+    } catch (error) {
+      logger.error('Save base64 image to local error:', error as Error)
+      throw error
+    }
+  }
+
   public savePastedImage = async (
     _: Electron.IpcMainInvokeEvent,
     imageData: Uint8Array | Buffer,

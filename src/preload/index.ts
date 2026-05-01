@@ -172,6 +172,10 @@ const api = {
       ipcRenderer.invoke(IpcChannel.File_SavePastedImage, imageData, extension),
     download: (url: string, isUseContentType?: boolean) =>
       ipcRenderer.invoke(IpcChannel.File_Download, url, isUseContentType),
+    downloadImage: (url: string): Promise<FileMetadata> =>
+      ipcRenderer.invoke(IpcChannel.File_DownloadImage, url),
+    saveBase64ImageLocal: (data: string): Promise<FileMetadata> =>
+      ipcRenderer.invoke(IpcChannel.File_SaveBase64ImageLocal, data),
     copy: (fileId: string, destPath: string) => ipcRenderer.invoke(IpcChannel.File_Copy, fileId, destPath),
     base64File: (fileId: string) => ipcRenderer.invoke(IpcChannel.File_Base64File, fileId),
     pdfInfo: (fileId: string) => ipcRenderer.invoke(IpcChannel.File_GetPdfInfo, fileId),
