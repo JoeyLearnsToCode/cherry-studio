@@ -700,7 +700,7 @@ export const resendMessageThunk =
  */
 export const appendMessageThunk =
   (topicId: Topic['id'], assistantId: string, role: 'user' | 'assistant') =>
-  async (dispatch: AppDispatch) => {
+  async (dispatch: AppDispatch, getState: () => RootState) => {
     try {
       let message: Message
       let textBlock: MainTextMessageBlock
@@ -713,7 +713,13 @@ export const appendMessageThunk =
           blocks: [textBlock.id]
         })
       } else {
-        message = createAssistantMessage(assistantId, topicId)
+        // 从历史消息中查找最后一条用户消息，用其 id 作为 askId
+        const allMessages = selectMessagesForTopic(getState(), topicId)
+        const lastUserMessage = [...allMessages].reverse().find((m) => m.role === 'user')
+
+        message = createAssistantMessage(assistantId, topicId, {
+          askId: lastUserMessage?.id
+        })
         textBlock = createMainTextBlock(message.id, '', { status: MessageBlockStatus.SUCCESS })
         message = { ...message, blocks: [textBlock.id], status: AssistantMessageStatus.SUCCESS }
       }
@@ -740,13 +746,12 @@ export const continueGenerationThunk =
   async (dispatch: AppDispatch, getState: () => RootState) => {
     try {
       if (!lastAssistantMessage.askId) {
-        logger.error('[continueGenerationThunk] Last assistant message does not have an askId.')
-        return
+        logger.warn('[continueGenerationThunk] Last assistant message does not have an askId. Continuing without it.')
       }
 
       // 创建新的助手消息来接收继续生成的内容
+      // 不设置 askId，使其独立成组显示在原消息下方，而非与原消息并排
       const newAssistantMessage = createAssistantMessage(assistant.id, topicId, {
-        askId: lastAssistantMessage.askId,
         model: assistant.model
       })
 
