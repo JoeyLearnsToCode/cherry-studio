@@ -713,13 +713,12 @@ export const appendMessageThunk =
           blocks: [textBlock.id]
         })
       } else {
-        // 从历史消息中查找最后一条用户消息，用其 id 作为 askId
+        // 仅当紧邻的上一条消息是用户消息时，用其 id 作为 askId
         const allMessages = selectMessagesForTopic(getState(), topicId)
-        const lastUserMessage = [...allMessages].reverse().find((m) => m.role === 'user')
+        const lastMessage = allMessages[allMessages.length - 1]
+        const askId = lastMessage?.role === 'user' ? lastMessage.id : undefined
 
-        message = createAssistantMessage(assistantId, topicId, {
-          askId: lastUserMessage?.id
-        })
+        message = createAssistantMessage(assistantId, topicId, { askId })
         textBlock = createMainTextBlock(message.id, '', { status: MessageBlockStatus.SUCCESS })
         message = { ...message, blocks: [textBlock.id], status: AssistantMessageStatus.SUCCESS }
       }

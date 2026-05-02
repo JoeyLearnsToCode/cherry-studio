@@ -212,8 +212,7 @@ export function useMessageOperations(topic: Topic) {
         return
       }
       if (!existingAssistantMessage.askId) {
-        logger.error('Cannot append response: The existing assistant message is missing its askId.')
-        return
+        logger.warn('appendAssistantResponse: The existing assistant message is missing its askId. Falling back to includeLastAssistantInContext mode.')
       }
       await dispatch(
         appendAssistantResponseThunk(
