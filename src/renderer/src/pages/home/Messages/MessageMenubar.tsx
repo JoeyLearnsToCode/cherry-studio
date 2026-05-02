@@ -152,11 +152,9 @@ const MessageMenubar: FC<Props> = (props) => {
 
   const handleResendUserMessage = useCallback(
     async (messageUpdate?: Message) => {
-      if (!loading) {
-        await resendMessage(messageUpdate ?? message, assistant)
-      }
+      await resendMessage(messageUpdate ?? message, assistant)
     },
-    [assistant, loading, message, resendMessage]
+    [assistant, message, resendMessage]
   )
 
   const { startEditing } = useMessageEditing()
@@ -392,11 +390,8 @@ const MessageMenubar: FC<Props> = (props) => {
 
   const onRegenerate = async (e: React.MouseEvent | undefined) => {
     e?.stopPropagation?.()
-    if (loading) return
-    // No need to reset or edit the message anymore
-    // const selectedModel = isGrouped ? model : assistantModel
-    // const _message = resetAssistantMessage(message, selectedModel)
-    // editMessage(message.id, { ..._message }) // REMOVED
+    // 仅当消息正在生成时拦截，避免对正在流式输出的同一条消息做并发写入
+    if (message.status === 'processing' || message.status === 'pending' || message.status === 'searching') return
 
     // Call the function from the hook
     regenerateAssistantMessage(message, assistant)
@@ -438,12 +433,11 @@ const MessageMenubar: FC<Props> = (props) => {
   const onMentionModel = useCallback(
     async (e: React.MouseEvent) => {
       e.stopPropagation()
-      if (loading) return
       const selectedModel = await SelectModelPopup.show({ model, filter: mentionModelFilter })
       if (!selectedModel) return
       appendAssistantResponse(message, selectedModel, { ...assistant, model: selectedModel })
     },
-    [appendAssistantResponse, assistant, loading, mentionModelFilter, message, model]
+    [appendAssistantResponse, assistant, mentionModelFilter, message, model]
   )
 
   const onUseful = useCallback(
