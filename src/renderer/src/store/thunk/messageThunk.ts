@@ -21,7 +21,6 @@ import {
 } from '@renderer/utils/messageUtils/create'
 import { getTopicQueue } from '@renderer/utils/queue'
 import { waitForTopicQueue } from '@renderer/utils/queue'
-import { t } from 'i18next'
 import { isEmpty, throttle } from 'lodash'
 import { LRUCache } from 'lru-cache'
 
@@ -800,36 +799,30 @@ export const regenerateAssistantResponseThunk =
       const allMessagesForTopic = selectMessagesForTopic(state, topicId)
 
       const askId = assistantMessageToRegenerate.askId
-      const hasAskId = !!askId
+      let hasAskId = !!askId
+
+      // askId 存在但无效（指向已删除的消息）时，降级为无 askId 分支
+      if (hasAskId && !state.messages.entities[askId!]) {
+        logger.warn(
+          `[regenerateAssistantResponseThunk] Original user query (askId: ${askId}) not found in entities. Falling back to includeLastAssistantInContext mode.`
+        )
+        hasAskId = false
+      }
 
       if (!hasAskId) {
         logger.warn(
-          `[regenerateAssistantResponseThunk] Assistant message ${assistantMessageToRegenerate.id} does not have an askId. Falling back to includeLastAssistantInContext mode.`
+          `[regenerateAssistantResponseThunk] Assistant message ${assistantMessageToRegenerate.id} does not have a valid askId. Falling back to includeLastAssistantInContext mode.`
         )
       }
 
-      if (hasAskId && !state.messages.entities[askId!]) {
-        logger.error(
-          `[regenerateAssistantResponseThunk] Original user query (askId: ${askId}) not found in entities. Cannot create assistant response without corresponding user message.`
-        )
-
-        // Show error popup instead of creating error message block
-        window.message.error({
-          content: t('error.missing_user_message'),
-          key: 'missing-user-message-error'
-        })
-
-        return
-      }
-
-      // Find the original user query (only needed when askId exists)
+      // Find the original user query (only needed when askId exists and is valid)
       if (hasAskId) {
         const originalUserQuery = allMessagesForTopic.find((m) => m.id === assistantMessageToRegenerate.askId)
         if (!originalUserQuery) {
-          logger.error(
-            `[regenerateAssistantResponseThunk] Original user query (askId: ${assistantMessageToRegenerate.askId}) not found for assistant message ${assistantMessageToRegenerate.id}. Cannot regenerate.`
+          logger.warn(
+            `[regenerateAssistantResponseThunk] Original user query (askId: ${assistantMessageToRegenerate.askId}) not found for assistant message ${assistantMessageToRegenerate.id}. Falling back to includeLastAssistantInContext mode.`
           )
-          return
+          hasAskId = false
         }
       }
 
@@ -1027,33 +1020,21 @@ export const appendAssistantResponseThunk =
       }
       let askId = existingAssistantMsg.askId
       let hasAskId = !!askId
-      let syntheticAskId = false // 标记 askId 是否为合成生成（仅用于分组，不指向实际用户消息）
 
-      if (!hasAskId) {
-        // 生成合成 askId，用于将源消息与新消息归为同一组
+      // askId 存在但无效（指向已删除的消息）时，保留原 askId 用于分组，跳过实体验证
+      if (hasAskId && !state.messages.entities[askId!]) {
+        logger.warn(
+          `[appendAssistantResponseThunk] Original user query (askId: ${askId}) not found in entities. Keeping askId for grouping, skipping entity verification.`
+        )
+      } else if (!hasAskId) {
+        // askId 为空时，生成合成 askId，用于将源消息与新消息归为同一组
         askId = uuid()
         hasAskId = true
-        syntheticAskId = true
 
         // 补写源消息的 askId，使其与新消息在同一分组
         const updatedExisting = { ...existingAssistantMsg, askId }
         dispatch(newMessagesActions.updateMessage({ topicId, messageId: existingAssistantMessageId, updates: updatedExisting }))
         await db.topics.update(topicId, { messages: selectMessagesForTopic(getState(), topicId) })
-      }
-
-      // Verify the original user query exists (only when askId points to a real message)
-      if (!syntheticAskId && !state.messages.entities[askId!]) {
-        logger.error(
-          `[appendAssistantResponseThunk] Original user query (askId: ${askId}) not found in entities. Cannot create assistant response without corresponding user message.`
-        )
-
-        // Show error popup instead of creating an error message block
-        window.message.error({
-          content: t('error.missing_user_message'),
-          key: 'missing-user-message-error'
-        })
-
-        return
       }
 
       // 2. Create the new assistant message stub
