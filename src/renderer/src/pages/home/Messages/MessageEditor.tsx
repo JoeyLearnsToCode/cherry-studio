@@ -12,7 +12,7 @@ import { selectMessagesForTopic } from '@renderer/store/newMessage'
 import { FileMetadata, FileTypes } from '@renderer/types'
 import { Message, MessageBlock, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import { classNames } from '@renderer/utils'
-import { getFilesFromDropEvent, isSendMessageKeyPressed } from '@renderer/utils/input'
+import { getFilesFromDropEvent } from '@renderer/utils/input'
 import { createFileBlock, createImageBlock } from '@renderer/utils/messageUtils/create'
 import { findAllBlocks } from '@renderer/utils/messageUtils/find'
 import { documentExts, imageExts, textExts } from '@shared/config/constant'
@@ -45,7 +45,7 @@ const MessageBlockEditor: FC<Props> = ({ message, topicId, onSave, onResend, onC
   const [isFileDragging, setIsFileDragging] = useState(false)
   const { assistant } = useAssistant(message.assistantId)
   const model = assistant.model || assistant.defaultModel
-  const { pasteLongTextThreshold, fontSize, sendMessageShortcut, enableSpellCheck } = useSettings()
+  const { pasteLongTextThreshold, fontSize, enableSpellCheck } = useSettings()
   const { t } = useTranslation()
   const textareaRef = useRef<TextAreaRef>(null)
   const attachmentButtonRef = useRef<AttachmentButtonRef>(null)
@@ -224,40 +224,26 @@ const MessageBlockEditor: FC<Props> = ({ message, topicId, onSave, onResend, onC
   }
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>, blockId: string) => {
-    if (message.role !== 'user') {
-      return
-    }
-
-    // keep the same enter behavior as inputbar
     const isEnterPressed = event.key === 'Enter' && !event.nativeEvent.isComposing
     if (isEnterPressed) {
-      if (isSendMessageKeyPressed(event, sendMessageShortcut)) {
-        handleResend()
-        return event.preventDefault()
-      } else {
-        if (!event.shiftKey) {
-          event.preventDefault()
-
-          const textArea = textareaRef.current?.resizableTextArea?.textArea
-          if (textArea) {
-            const start = textArea.selectionStart
-            const end = textArea.selectionEnd
-            const text = textArea.value
-            const newText = text.substring(0, start) + '\n' + text.substring(end)
-
-            //same with onChange()
-            handleTextChange(blockId, newText)
-
-            // set cursor position in the next render cycle
-            setTimeoutTimer(
-              'handleKeyDown',
-              () => {
-                textArea.selectionStart = textArea.selectionEnd = start + 1
-              },
-              0
-            )
-          }
+      if (event.shiftKey) {
+        // Shift+Enter: 插入换行
+        event.preventDefault()
+        const textArea = textareaRef.current?.resizableTextArea?.textArea
+        if (textArea) {
+          const start = textArea.selectionStart
+          const end = textArea.selectionEnd
+          const text = textArea.value
+          const newText = text.substring(0, start) + '\n' + text.substring(end)
+          handleTextChange(blockId, newText)
+          setTimeoutTimer('handleKeyDown', () => {
+            textArea.selectionStart = textArea.selectionEnd = start + 1
+          }, 0)
         }
+      } else {
+        // Enter: 保存（用户消息和助手消息统一行为）
+        handleSave()
+        event.preventDefault()
       }
     }
   }

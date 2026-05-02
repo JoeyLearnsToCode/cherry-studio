@@ -801,17 +801,17 @@ export const regenerateAssistantResponseThunk =
       const allMessagesForTopic = selectMessagesForTopic(state, topicId)
 
       const askId = assistantMessageToRegenerate.askId
+      const hasAskId = !!askId
 
-      if (!askId) {
-        logger.error(
-          `[appendAssistantResponseThunk] Existing assistant message ${assistantMessageToRegenerate.id} does not have an askId.`
+      if (!hasAskId) {
+        logger.warn(
+          `[regenerateAssistantResponseThunk] Assistant message ${assistantMessageToRegenerate.id} does not have an askId. Falling back to includeLastAssistantInContext mode.`
         )
-        return // Stop if askId is missing
       }
 
-      if (!state.messages.entities[askId]) {
+      if (hasAskId && !state.messages.entities[askId!]) {
         logger.error(
-          `[appendAssistantResponseThunk] Original user query (askId: ${askId}) not found in entities. Cannot create assistant response without corresponding user message.`
+          `[regenerateAssistantResponseThunk] Original user query (askId: ${askId}) not found in entities. Cannot create assistant response without corresponding user message.`
         )
 
         // Show error popup instead of creating error message block
@@ -823,13 +823,15 @@ export const regenerateAssistantResponseThunk =
         return
       }
 
-      // 2. Find the original user query (Restored Logic)
-      const originalUserQuery = allMessagesForTopic.find((m) => m.id === assistantMessageToRegenerate.askId)
-      if (!originalUserQuery) {
-        logger.error(
-          `[regenerateAssistantResponseThunk] Original user query (askId: ${assistantMessageToRegenerate.askId}) not found for assistant message ${assistantMessageToRegenerate.id}. Cannot regenerate.`
-        )
-        return
+      // Find the original user query (only needed when askId exists)
+      if (hasAskId) {
+        const originalUserQuery = allMessagesForTopic.find((m) => m.id === assistantMessageToRegenerate.askId)
+        if (!originalUserQuery) {
+          logger.error(
+            `[regenerateAssistantResponseThunk] Original user query (askId: ${assistantMessageToRegenerate.askId}) not found for assistant message ${assistantMessageToRegenerate.id}. Cannot regenerate.`
+          )
+          return
+        }
       }
 
       // 3. Verify the assistant message itself exists in entities
@@ -897,7 +899,8 @@ export const regenerateAssistantResponseThunk =
           getState,
           topicId,
           assistantConfigForRegen,
-          resetAssistantMsg
+          resetAssistantMsg,
+          { includeLastAssistantInContext: !hasAskId }
         )
       })
     } catch (error) {
@@ -1024,15 +1027,16 @@ export const appendAssistantResponseThunk =
         return // Ensure it's an assistant message
       }
       const askId = existingAssistantMsg.askId
-      if (!askId) {
-        logger.error(
-          `[appendAssistantResponseThunk] Existing assistant message ${existingAssistantMessageId} does not have an askId.`
+      const hasAskId = !!askId
+
+      if (!hasAskId) {
+        logger.warn(
+          `[appendAssistantResponseThunk] Existing assistant message ${existingAssistantMessageId} does not have an askId. Falling back to includeLastAssistantInContext mode.`
         )
-        return // Stop if askId is missing
       }
 
-      // (Optional but recommended) Verify the original user query exists
-      if (!state.messages.entities[askId]) {
+      // Verify the original user query exists (only when askId is present)
+      if (hasAskId && !state.messages.entities[askId!]) {
         logger.error(
           `[appendAssistantResponseThunk] Original user query (askId: ${askId}) not found in entities. Cannot create assistant response without corresponding user message.`
         )
@@ -1048,7 +1052,7 @@ export const appendAssistantResponseThunk =
 
       // 2. Create the new assistant message stub
       const newAssistantStub = createAssistantMessage(assistant.id, topicId, {
-        askId: askId, // Crucial: Use the original askId
+        askId: askId, // Use the original askId if available
         model: newModel,
         modelId: newModel.id,
         traceId: traceId
@@ -1076,7 +1080,8 @@ export const appendAssistantResponseThunk =
           getState,
           topicId,
           assistantConfigForThisCall,
-          newAssistantStub // Pass the newly created stub
+          newAssistantStub, // Pass the newly created stub
+          { includeLastAssistantInContext: !hasAskId }
         )
       })
     } catch (error) {
