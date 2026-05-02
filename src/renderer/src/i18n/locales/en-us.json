@@ -580,7 +580,8 @@
         "image": "Copy as image",
         "md": "Copy as markdown",
         "plain_text": "Copy as plain text (remove Markdown)",
-        "title": "Copy"
+        "title": "Copy",
+        "new_topic": "Copy as new topic"
       },
       "delete": {
         "shortcut": "Hold {{key}} to delete directly"

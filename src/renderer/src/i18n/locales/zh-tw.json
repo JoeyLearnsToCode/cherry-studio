@@ -580,7 +580,8 @@
         "image": "複製為圖片",
         "md": "複製為 Markdown",
         "plain_text": "複製為純文字（移除 Markdown）",
-        "title": "複製"
+        "title": "複製",
+        "new_topic": "複製為新話題"
       },
       "delete": {
         "shortcut": "按住 {{key}} 可直接刪除"

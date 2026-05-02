@@ -580,7 +580,8 @@
         "image": "画像としてコピー",
         "md": "Markdownとしてコピー",
         "plain_text": "プレーンテキストとしてコピー（Markdownを除去）",
-        "title": "コピー"
+        "title": "コピー",
+        "new_topic": "新しいトピックとしてコピー"
       },
       "delete": {
         "shortcut": "{{key}}キーを押しながらで直接削除"

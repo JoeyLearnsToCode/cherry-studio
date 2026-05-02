@@ -2,6 +2,9 @@ import Emittery from 'emittery'
 
 export const EventEmitter = new Emittery()
 
+/** 记录追加后需要自动进入编辑模式的消息 ID */
+export const pendingEditMessageIds = new Set<string>()
+
 export const EVENT_NAMES = {
   SEND_MESSAGE: 'SEND_MESSAGE',
   APPEND_MESSAGE: 'APPEND_MESSAGE',

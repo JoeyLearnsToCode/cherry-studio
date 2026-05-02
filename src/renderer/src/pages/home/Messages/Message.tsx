@@ -7,7 +7,7 @@ import { useMessageOperations } from '@renderer/hooks/useMessageOperations'
 import { useModel } from '@renderer/hooks/useModel'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { useTimer } from '@renderer/hooks/useTimer'
-import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
+import { EVENT_NAMES, EventEmitter, pendingEditMessageIds } from '@renderer/services/EventService'
 import { getMessageModelId } from '@renderer/services/MessagesService'
 import { getModelUniqId } from '@renderer/services/ModelService'
 import { estimateMessageUsage } from '@renderer/services/TokenService'
@@ -145,9 +145,13 @@ const MessageItem: FC<Props> = ({
   )
 
   useEffect(() => {
+    // 追加消息后自动进入编辑模式
+    if (pendingEditMessageIds.has(message.id)) {
+      pendingEditMessageIds.delete(message.id)
+      startEditing(message.id)
+    }
     const unsubscribes = [
-      EventEmitter.on(EVENT_NAMES.LOCATE_MESSAGE + ':' + message.id, messageHighlightHandler),
-      EventEmitter.on(EVENT_NAMES.APPEND_MESSAGE + ':' + message.id, () => startEditing(message.id))
+      EventEmitter.on(EVENT_NAMES.LOCATE_MESSAGE + ':' + message.id, messageHighlightHandler)
     ]
     return () => unsubscribes.forEach((unsub) => unsub())
   }, [message.id, messageHighlightHandler, startEditing])

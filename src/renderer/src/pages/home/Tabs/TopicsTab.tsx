@@ -9,12 +9,13 @@ import { useInPlaceEdit } from '@renderer/hooks/useInPlaceEdit'
 import { useNotesSettings } from '@renderer/hooks/useNotesSettings'
 import { modelGenerating } from '@renderer/hooks/useRuntime'
 import { useSettings } from '@renderer/hooks/useSettings'
+import { getDefaultTopic } from '@renderer/services/AssistantService'
 import { finishTopicRenaming, startTopicRenaming, TopicManager } from '@renderer/hooks/useTopic'
 import { fetchMessagesSummary } from '@renderer/services/ApiService'
-import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
+import { EVENT_NAMES, EventEmitter, pendingEditMessageIds } from '@renderer/services/EventService'
 import store, { RootState } from '@renderer/store'
-import { newMessagesActions } from '@renderer/store/newMessage'
-import { appendMessageThunk } from '@renderer/store/thunk/messageThunk'
+import { newMessagesActions, selectMessagesForTopic } from '@renderer/store/newMessage'
+import { appendMessageThunk, cloneMessagesToNewTopicThunk } from '@renderer/store/thunk/messageThunk'
 import { setGenerating } from '@renderer/store/runtime'
 import { Assistant, Topic } from '@renderer/types'
 import { classNames, removeSpecialCharactersForFileName } from '@renderer/utils'
@@ -64,7 +65,7 @@ const Topics: FC<Props> = ({ assistant: _assistant, activeTopic, setActiveTopic,
   const { t } = useTranslation()
   const { notesPath } = useNotesSettings()
   const { assistants } = useAssistants()
-  const { assistant, removeTopic, moveTopic, updateTopic, updateTopics } = useAssistant(_assistant.id)
+  const { assistant, addTopic, removeTopic, moveTopic, updateTopic, updateTopics } = useAssistant(_assistant.id)
   const { showTopicTime, pinTopicsToTop, setTopicPosition, topicPosition } = useSettings()
 
   const renamingTopics = useSelector((state: RootState) => state.runtime.chat.renamingTopics)
@@ -299,7 +300,7 @@ const Topics: FC<Props> = ({ assistant: _assistant, activeTopic, setActiveTopic,
             onClick: async () => {
               const message = await store.dispatch(appendMessageThunk(topic.id, assistant.id, 'user'))
               if (message?.id) {
-                EventEmitter.emit(EVENT_NAMES.APPEND_MESSAGE + ':' + message.id)
+                pendingEditMessageIds.add(message.id)
               }
             }
           },
@@ -309,7 +310,7 @@ const Topics: FC<Props> = ({ assistant: _assistant, activeTopic, setActiveTopic,
             onClick: async () => {
               const message = await store.dispatch(appendMessageThunk(topic.id, assistant.id, 'assistant'))
               if (message?.id) {
-                EventEmitter.emit(EVENT_NAMES.APPEND_MESSAGE + ':' + message.id)
+                pendingEditMessageIds.add(message.id)
               }
             }
           }
@@ -337,6 +338,47 @@ const Topics: FC<Props> = ({ assistant: _assistant, activeTopic, setActiveTopic,
         key: 'copy',
         icon: <CopyIcon size={14} />,
         children: [
+          {
+            label: t('chat.topics.copy.new_topic'),
+            key: 'new_topic',
+            onClick: async () => {
+              const state = store.getState()
+              const messages = selectMessagesForTopic(state, topic.id)
+
+              // 确定分支点：如果话题正在生成中，排除末尾不完整的消息
+              let branchPointIndex = messages.length
+              if (isPending(topic.id)) {
+                // 从后往前找到第一条状态完整的消息的下一个位置
+                for (let i = messages.length - 1; i >= 0; i--) {
+                  const msg = messages[i]
+                  const isComplete =
+                    msg.role === 'user' || (msg.role === 'assistant' && msg.status === 'success')
+                  if (isComplete) {
+                    branchPointIndex = i + 1
+                    break
+                  }
+                  branchPointIndex = i
+                }
+              }
+
+              const newTopic = getDefaultTopic(assistant.id)
+              newTopic.name = topic.name
+
+              // 添加新话题到 Redux store
+              addTopic(newTopic)
+
+              // 克隆消息到新话题
+              const success = await store.dispatch(
+                cloneMessagesToNewTopicThunk(topic.id, branchPointIndex, newTopic)
+              )
+
+              if (success) {
+                setActiveTopic(newTopic)
+              } else {
+                window.message.error(t('message.branch.error'))
+              }
+            }
+          },
           {
             label: t('chat.topics.copy.image'),
             key: 'img',
