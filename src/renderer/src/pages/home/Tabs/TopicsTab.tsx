@@ -12,9 +12,9 @@ import { useSettings } from '@renderer/hooks/useSettings'
 import { finishTopicRenaming, startTopicRenaming, TopicManager } from '@renderer/hooks/useTopic'
 import { fetchMessagesSummary } from '@renderer/services/ApiService'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
-import store from '@renderer/store'
-import { RootState } from '@renderer/store'
+import store, { RootState } from '@renderer/store'
 import { newMessagesActions } from '@renderer/store/newMessage'
+import { appendMessageThunk } from '@renderer/store/thunk/messageThunk'
 import { setGenerating } from '@renderer/store/runtime'
 import { Assistant, Topic } from '@renderer/types'
 import { classNames, removeSpecialCharactersForFileName } from '@renderer/utils'
@@ -287,6 +287,33 @@ const Topics: FC<Props> = ({ assistant: _assistant, activeTopic, setActiveTopic,
             onOk: () => onClearMessages(topic)
           })
         }
+      },
+      {
+        label: t('chat.topics.append.title'),
+        key: 'append-message',
+        icon: <PlusIcon size={14} />,
+        children: [
+          {
+            label: t('chat.topics.append.user'),
+            key: 'append-user',
+            onClick: async () => {
+              const message = await store.dispatch(appendMessageThunk(topic.id, assistant.id, 'user'))
+              if (message?.id) {
+                EventEmitter.emit(EVENT_NAMES.APPEND_MESSAGE + ':' + message.id)
+              }
+            }
+          },
+          {
+            label: t('chat.topics.append.assistant'),
+            key: 'append-assistant',
+            onClick: async () => {
+              const message = await store.dispatch(appendMessageThunk(topic.id, assistant.id, 'assistant'))
+              if (message?.id) {
+                EventEmitter.emit(EVENT_NAMES.APPEND_MESSAGE + ':' + message.id)
+              }
+            }
+          }
+        ]
       },
       {
         label: t('settings.topic.position.label'),

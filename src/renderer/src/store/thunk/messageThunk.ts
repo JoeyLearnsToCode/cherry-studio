@@ -9,11 +9,13 @@ import { createStreamProcessor, type StreamProcessorCallbacks } from '@renderer/
 import store from '@renderer/store'
 import { updateTopicUpdatedAt } from '@renderer/store/assistants'
 import { type Assistant, type FileMetadata, type Model, type Topic } from '@renderer/types'
-import type { FileMessageBlock, ImageMessageBlock, Message, MessageBlock } from '@renderer/types/newMessage'
+import type { FileMessageBlock, ImageMessageBlock, MainTextMessageBlock, Message, MessageBlock } from '@renderer/types/newMessage'
 import { AssistantMessageStatus, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import { uuid } from '@renderer/utils'
 import {
   createAssistantMessage,
+  createMainTextBlock,
+  createMessage,
   createTranslationBlock,
   resetAssistantMessage
 } from '@renderer/utils/messageUtils/create'
@@ -690,8 +692,43 @@ export const resendMessageThunk =
     } finally {
       finishTopicLoading(topicId)
     }
-   }
-}
+  }
+
+/**
+ * Thunk to append a blank message (user or assistant) to a topic without triggering AI response.
+ * The message is persisted to DB and Redux, and includes an empty text block ready for editing.
+ */
+export const appendMessageThunk =
+  (topicId: Topic['id'], assistantId: string, role: 'user' | 'assistant') =>
+  async (dispatch: AppDispatch) => {
+    try {
+      let message: Message
+      let textBlock: MainTextMessageBlock
+
+      if (role === 'user') {
+        const messageId = uuid()
+        textBlock = createMainTextBlock(messageId, '', { status: MessageBlockStatus.SUCCESS })
+        message = createMessage('user', topicId, assistantId, {
+          id: messageId,
+          blocks: [textBlock.id]
+        })
+      } else {
+        message = createAssistantMessage(assistantId, topicId)
+        textBlock = createMainTextBlock(message.id, '', { status: MessageBlockStatus.SUCCESS })
+        message = { ...message, blocks: [textBlock.id], status: AssistantMessageStatus.SUCCESS }
+      }
+
+      await saveMessageAndBlocksToDB(message, [textBlock])
+      dispatch(newMessagesActions.addMessage({ topicId, message }))
+      dispatch(upsertOneBlock(textBlock))
+      dispatch(updateTopicUpdatedAt({ topicId }))
+
+      return message
+    } catch (error) {
+      logger.error('[appendMessageThunk] Error:', error as Error)
+      return undefined
+    }
+  }
 
 /**
  * Thunk to continue generation from the last assistant message.

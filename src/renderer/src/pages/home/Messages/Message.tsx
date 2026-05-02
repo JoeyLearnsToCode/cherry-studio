@@ -71,7 +71,7 @@ const MessageItem: FC<Props> = ({
   const { messageFont, fontSize, messageStyle, showMessageOutline } = useSettings()
   const { editMessageBlocks, resendUserMessageWithEdit, editMessage } = useMessageOperations(topic)
   const messageContainerRef = useRef<HTMLDivElement>(null)
-  const { editingMessageId, stopEditing } = useMessageEditing()
+  const { editingMessageId, startEditing, stopEditing } = useMessageEditing()
   const { setTimeoutTimer } = useTimer()
   const isEditing = editingMessageId === message.id
 
@@ -145,9 +145,12 @@ const MessageItem: FC<Props> = ({
   )
 
   useEffect(() => {
-    const unsubscribes = [EventEmitter.on(EVENT_NAMES.LOCATE_MESSAGE + ':' + message.id, messageHighlightHandler)]
+    const unsubscribes = [
+      EventEmitter.on(EVENT_NAMES.LOCATE_MESSAGE + ':' + message.id, messageHighlightHandler),
+      EventEmitter.on(EVENT_NAMES.APPEND_MESSAGE + ':' + message.id, () => startEditing(message.id))
+    ]
     return () => unsubscribes.forEach((unsub) => unsub())
-  }, [message.id, messageHighlightHandler])
+  }, [message.id, messageHighlightHandler, startEditing])
 
   if (message.type === 'clear') {
     return (

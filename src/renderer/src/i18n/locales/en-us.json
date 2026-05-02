@@ -650,7 +650,12 @@
         "tips": "Topic Prompts: Additional supplementary prompts provided for the current topic"
       },
       "title": "Topics",
-      "unpin": "Unpin Topic"
+      "unpin": "Unpin Topic",
+      "append": {
+        "title": "Append Message",
+        "user": "User Message",
+        "assistant": "Assistant Message"
+      }
     },
     "translate": "Translate"
   },

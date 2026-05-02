@@ -8,6 +8,7 @@ import { updateOneBlock } from '@renderer/store/messageBlock'
 import { newMessagesActions, selectMessagesForTopic } from '@renderer/store/newMessage'
 import {
   appendAssistantResponseThunk,
+  appendMessageThunk,
   clearTopicMessagesThunk,
   cloneMessagesToNewTopicThunk,
   continueGenerationThunk,
@@ -184,6 +185,17 @@ export function useMessageOperations(topic: Topic) {
         return
       }
       await dispatch(continueGenerationThunk(topic.id, lastAssistantMessage, assistant))
+    },
+    [dispatch, topic.id]
+  )
+
+  /**
+   * 追加一条空白消息（用户或助手），不触发 AI 响应。 / Appends a blank message (user or assistant) without triggering AI response.
+   * Dispatches appendMessageThunk.
+   */
+  const appendMessage = useCallback(
+    async (assistantId: string, role: 'user' | 'assistant') => {
+      return (await dispatch(appendMessageThunk(topic.id, assistantId, role))) as Message | undefined
     },
     [dispatch, topic.id]
   )
@@ -467,6 +479,7 @@ export function useMessageOperations(topic: Topic) {
     resendMessage,
     regenerateAssistantMessage,
     continueGeneration,
+    appendMessage,
     resendUserMessageWithEdit,
     appendAssistantResponse,
     createNewContext,
