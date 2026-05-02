@@ -1025,22 +1025,29 @@ export const appendAssistantResponseThunk =
         )
         return // Ensure it's an assistant message
       }
-      const askId = existingAssistantMsg.askId
-      const hasAskId = !!askId
+      let askId = existingAssistantMsg.askId
+      let hasAskId = !!askId
+      let syntheticAskId = false // 标记 askId 是否为合成生成（仅用于分组，不指向实际用户消息）
 
       if (!hasAskId) {
-        logger.warn(
-          `[appendAssistantResponseThunk] Existing assistant message ${existingAssistantMessageId} does not have an askId. Falling back to includeLastAssistantInContext mode.`
-        )
+        // 生成合成 askId，用于将源消息与新消息归为同一组
+        askId = uuid()
+        hasAskId = true
+        syntheticAskId = true
+
+        // 补写源消息的 askId，使其与新消息在同一分组
+        const updatedExisting = { ...existingAssistantMsg, askId }
+        dispatch(newMessagesActions.updateMessage({ topicId, messageId: existingAssistantMessageId, updates: updatedExisting }))
+        await db.topics.update(topicId, { messages: selectMessagesForTopic(getState(), topicId) })
       }
 
-      // Verify the original user query exists (only when askId is present)
-      if (hasAskId && !state.messages.entities[askId!]) {
+      // Verify the original user query exists (only when askId points to a real message)
+      if (!syntheticAskId && !state.messages.entities[askId!]) {
         logger.error(
           `[appendAssistantResponseThunk] Original user query (askId: ${askId}) not found in entities. Cannot create assistant response without corresponding user message.`
         )
 
-        // Show error popup instead of creating error message block
+        // Show error popup instead of creating an error message block
         window.message.error({
           content: t('error.missing_user_message'),
           key: 'missing-user-message-error'
