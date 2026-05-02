@@ -422,11 +422,13 @@ async function fetchExternalTool(
 export async function fetchChatCompletion({
   messages,
   assistant,
-  onChunkReceived
+  onChunkReceived,
+  keepLastAssistantMessage = false
 }: {
   messages: Message[]
   assistant: Assistant
   onChunkReceived: (chunk: Chunk) => void
+  keepLastAssistantMessage?: boolean
   // TODO
   // onChunkStatus: (status: 'searching' | 'processing' | 'success' | 'error') => void
 }) {
@@ -458,7 +460,9 @@ export async function fetchChatCompletion({
 
   const filteredMessages2 = filterUsefulMessages(filteredMessages1)
 
-  const filteredMessages3 = filterLastAssistantMessage(filteredMessages2)
+  const filteredMessages3 = keepLastAssistantMessage
+    ? filteredMessages2
+    : filterLastAssistantMessage(filteredMessages2)
 
   const filteredMessages4 = filterAdjacentUserMessaegs(filteredMessages3)
 

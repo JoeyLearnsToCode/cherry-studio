@@ -16,7 +16,7 @@ import {
 import db from '@renderer/databases'
 import { useAssistant } from '@renderer/hooks/useAssistant'
 import { useKnowledgeBases } from '@renderer/hooks/useKnowledge'
-import { useMessageOperations, useTopicLoading } from '@renderer/hooks/useMessageOperations'
+import { useMessageOperations, useTopicLoading, useTopicMessages } from '@renderer/hooks/useMessageOperations'
 import { modelGenerating, useRuntime } from '@renderer/hooks/useRuntime'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { useShortcut, useShortcutDisplay } from '@renderer/hooks/useShortcuts'
@@ -35,7 +35,7 @@ import { translateText } from '@renderer/services/TranslateService'
 import WebSearchService from '@renderer/services/WebSearchService'
 import { useAppDispatch, useAppSelector } from '@renderer/store'
 import { setSearching } from '@renderer/store/runtime'
-import { sendMessage as _sendMessage } from '@renderer/store/thunk/messageThunk'
+import { sendMessage as _sendMessage, continueGenerationThunk } from '@renderer/store/thunk/messageThunk'
 import { Assistant, FileType, FileTypes, KnowledgeBase, KnowledgeItem, Model, Topic } from '@renderer/types'
 import type { MessageInputBaseParams } from '@renderer/types/newMessage'
 import { classNames, delay, filterSupportedFiles, formatFileSize } from '@renderer/utils'
@@ -99,6 +99,7 @@ const Inputbar: FC<Props> = ({ assistant: _assistant, setActiveTopic, topic }) =
   const containerRef = useRef(null)
   const { searching } = useRuntime()
   const { pauseMessages } = useMessageOperations(topic)
+  const messages = useTopicMessages(topic.id)
   const loading = useTopicLoading(topic)
   const dispatch = useAppDispatch()
   const [spaceClickCount, setSpaceClickCount] = useState(0)
@@ -184,7 +185,10 @@ const Inputbar: FC<Props> = ({ assistant: _assistant, setActiveTopic, topic }) =
 
   const newTopicShortcut = useShortcutDisplay('new_topic')
   const cleanTopicShortcut = useShortcutDisplay('clear_topic')
-  const inputEmpty = isEmpty(text.trim()) && files.length === 0
+  const inputEmpty = isEmpty(text) && files.length === 0
+  const inputBlank = isEmpty(text.trim()) && files.length === 0
+  const isLastMessageAssistant = messages.length > 0 && messages[messages.length - 1].role === 'assistant'
+  const isWhitespaceOnly = !isEmpty(text) && isEmpty(text.trim()) && files.length === 0
 
   _text = text
   _files = files
@@ -213,6 +217,21 @@ const Inputbar: FC<Props> = ({ assistant: _assistant, setActiveTopic, topic }) =
     if (inputEmpty || loading) {
       return
     }
+
+    // 继续生成：输入仅含空白字符且最后一条是助手消息时，保留已有内容让 AI 继续
+    if (isWhitespaceOnly && isLastMessageAssistant) {
+      const lastMessage = messages[messages.length - 1]
+      logger.info('Continuing generation (whitespace-only input)')
+      dispatch(continueGenerationThunk(topic.id, lastMessage, assistant))
+      setText('')
+      setTimeoutTimer('sendMessage_1', () => setText(''), 500)
+      setTimeoutTimer('sendMessage_2', () => resizeTextArea(true), 0)
+      return
+    }
+    if (inputBlank) {
+      return
+    }
+
     if (checkRateLimit(assistant)) {
       return
     }
@@ -258,7 +277,7 @@ const Inputbar: FC<Props> = ({ assistant: _assistant, setActiveTopic, topic }) =
       logger.warn('Failed to send message:', error as Error)
       parent?.recordException(error as Error)
     }
-  }, [assistant, dispatch, files, inputEmpty, loading, mentionedModels, resizeTextArea, setTimeoutTimer, text, topic])
+  }, [assistant, dispatch, files, inputEmpty, inputBlank, isWhitespaceOnly, isLastMessageAssistant, loading, mentionedModels, messages, resizeTextArea, setTimeoutTimer, text, topic])
 
   const translate = useCallback(async () => {
     if (isTranslating) {

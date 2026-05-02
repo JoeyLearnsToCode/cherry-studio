@@ -294,7 +294,8 @@ const fetchAndProcessAssistantResponseImpl = async (
   getState: () => RootState,
   topicId: string,
   origAssistant: Assistant,
-  assistantMessage: Message // Pass the prepared assistant message (new or reset)
+  assistantMessage: Message, // Pass the prepared assistant message (new or reset)
+  options?: { includeLastAssistantInContext?: boolean }
 ) => {
   const topic = origAssistant.topics.find((t) => t.id === topicId)
   const assistant = topic?.prompt
@@ -320,22 +321,33 @@ const fetchAndProcessAssistantResponseImpl = async (
     const allMessagesForTopic = selectMessagesForTopic(getState(), topicId)
 
     let messagesForContext: Message[] = []
-    const userMessageId = assistantMessage.askId
-    const userMessageIndex = allMessagesForTopic.findIndex((m) => m?.id === userMessageId)
 
-    if (userMessageIndex === -1) {
-      logger.error(
-        `[fetchAndProcessAssistantResponseImpl] Triggering user message ${userMessageId} (askId of ${assistantMsgId}) not found. Falling back.`
-      )
-      const assistantMessageIndexFallback = allMessagesForTopic.findIndex((m) => m?.id === assistantMsgId)
-      messagesForContext = (
-        assistantMessageIndexFallback !== -1
-          ? allMessagesForTopic.slice(0, assistantMessageIndexFallback)
+    if (options?.includeLastAssistantInContext) {
+      // 继续生成：上下文包含新助手消息之前的所有消息（包括之前的助手消息）
+      const newAssistantMsgIndex = allMessagesForTopic.findIndex((m) => m?.id === assistantMsgId)
+      const contextSlice =
+        newAssistantMsgIndex !== -1
+          ? allMessagesForTopic.slice(0, newAssistantMsgIndex)
           : allMessagesForTopic
-      ).filter((m) => m && !m.status?.includes('ing'))
-    } else {
-      const contextSlice = allMessagesForTopic.slice(0, userMessageIndex + 1)
       messagesForContext = contextSlice.filter((m) => m && !m.status?.includes('ing'))
+    } else {
+      const userMessageId = assistantMessage.askId
+      const userMessageIndex = allMessagesForTopic.findIndex((m) => m?.id === userMessageId)
+
+      if (userMessageIndex === -1) {
+        logger.error(
+          `[fetchAndProcessAssistantResponseImpl] Triggering user message ${userMessageId} (askId of ${assistantMsgId}) not found. Falling back.`
+        )
+        const assistantMessageIndexFallback = allMessagesForTopic.findIndex((m) => m?.id === assistantMsgId)
+        messagesForContext = (
+          assistantMessageIndexFallback !== -1
+            ? allMessagesForTopic.slice(0, assistantMessageIndexFallback)
+            : allMessagesForTopic
+        ).filter((m) => m && !m.status?.includes('ing'))
+      } else {
+        const contextSlice = allMessagesForTopic.slice(0, userMessageIndex + 1)
+        messagesForContext = contextSlice.filter((m) => m && !m.status?.includes('ing'))
+      }
     }
 
     callbacks = createCallbacks({
@@ -353,7 +365,8 @@ const fetchAndProcessAssistantResponseImpl = async (
     const result = await fetchChatCompletion({
       messages: messagesForContext,
       assistant: assistant,
-      onChunkReceived: streamProcessorCallbacks
+      onChunkReceived: streamProcessorCallbacks,
+      keepLastAssistantMessage: options?.includeLastAssistantInContext ?? false
     })
     endSpan({
       topicId,
@@ -674,6 +687,49 @@ export const resendMessageThunk =
       }
     } catch (error) {
       logger.error(`[resendMessageThunk] Error resending user message ${userMessageToResend.id}:`, error as Error)
+    } finally {
+      finishTopicLoading(topicId)
+    }
+   }
+}
+
+/**
+ * Thunk to continue generation from the last assistant message.
+ * Creates a new assistant message to receive the continued output,
+ * and sends the conversation context (including the previous assistant message) to the API.
+ */
+export const continueGenerationThunk =
+  (topicId: Topic['id'], lastAssistantMessage: Message, assistant: Assistant) =>
+  async (dispatch: AppDispatch, getState: () => RootState) => {
+    try {
+      if (!lastAssistantMessage.askId) {
+        logger.error('[continueGenerationThunk] Last assistant message does not have an askId.')
+        return
+      }
+
+      // 创建新的助手消息来接收继续生成的内容
+      const newAssistantMessage = createAssistantMessage(assistant.id, topicId, {
+        askId: lastAssistantMessage.askId,
+        model: assistant.model
+      })
+
+      await saveMessageAndBlocksToDB(newAssistantMessage, [])
+      dispatch(newMessagesActions.addMessage({ topicId, message: newAssistantMessage }))
+      dispatch(updateTopicUpdatedAt({ topicId }))
+
+      const queue = getTopicQueue(topicId)
+      queue.add(async () => {
+        await fetchAndProcessAssistantResponseImpl(
+          dispatch,
+          getState,
+          topicId,
+          assistant,
+          newAssistantMessage,
+          { includeLastAssistantInContext: true }
+        )
+      })
+    } catch (error) {
+      logger.error('[continueGenerationThunk] Error:', error as Error)
     } finally {
       finishTopicLoading(topicId)
     }

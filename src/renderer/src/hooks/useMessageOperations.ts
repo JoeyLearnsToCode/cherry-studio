@@ -10,6 +10,7 @@ import {
   appendAssistantResponseThunk,
   clearTopicMessagesThunk,
   cloneMessagesToNewTopicThunk,
+  continueGenerationThunk,
   deleteMessageGroupThunk,
   deleteSingleMessageThunk,
   initiateTranslationThunk,
@@ -168,6 +169,21 @@ export function useMessageOperations(topic: Topic) {
         return
       }
       await dispatch(regenerateAssistantResponseThunk(topic.id, message, assistant))
+    },
+    [dispatch, topic.id]
+  )
+
+  /**
+   * 继续生成：从最后一条助手消息继续输出，保留已有内容。 / Continues generation from the last assistant message, preserving existing content.
+   * Dispatches continueGenerationThunk.
+   */
+  const continueGeneration = useCallback(
+    async (lastAssistantMessage: Message, assistant: Assistant) => {
+      if (lastAssistantMessage.role !== 'assistant') {
+        logger.warn('continueGeneration should only be called for assistant messages.')
+        return
+      }
+      await dispatch(continueGenerationThunk(topic.id, lastAssistantMessage, assistant))
     },
     [dispatch, topic.id]
   )
@@ -450,6 +466,7 @@ export function useMessageOperations(topic: Topic) {
     editMessage,
     resendMessage,
     regenerateAssistantMessage,
+    continueGeneration,
     resendUserMessageWithEdit,
     appendAssistantResponse,
     createNewContext,
