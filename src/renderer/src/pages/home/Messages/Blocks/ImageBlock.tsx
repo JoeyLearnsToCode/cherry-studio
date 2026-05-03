@@ -25,7 +25,7 @@ async function downloadImageToLocal(imageSrc: string): Promise<FileMetadata | nu
       return await window.api.file.downloadImage(imageSrc)
     }
   } catch (error) {
-    logger.error('Incremental download failed:', error as Error)
+    logger.error('Download image to local failed:', error as Error)
     return null
   }
 }
@@ -52,16 +52,67 @@ function getImageSources(block: ImageMessageBlock): string[] {
   })
 }
 
+function doLocalizeImages(blockId: string, store: ReturnType<typeof useAppStore>) {
+  const latestBlock = store.getState().messageBlocks.entities[blockId] as ImageMessageBlock | undefined
+  if (!latestBlock?.metadata?.generateImageResponse?.images?.length) return
+
+  const latestLocalFiles = latestBlock.metadata?.localFiles
+  const latestMissingIndices: number[] = []
+  latestBlock.metadata.generateImageResponse.images.forEach((_, index) => {
+    if (!latestLocalFiles?.[index]) {
+      latestMissingIndices.push(index)
+    }
+  })
+
+  if (latestMissingIndices.length === 0) return
+
+  const newLocalFiles: (FileMetadata | null)[] = [
+    ...(latestLocalFiles || latestBlock.metadata.generateImageResponse.images.map(() => null))
+  ]
+
+  Promise.all(
+    latestMissingIndices.map(async (index) => {
+      const file = await downloadImageToLocal(latestBlock.metadata!.generateImageResponse!.images[index])
+      return { index, file }
+    })
+  ).then((results) => {
+    let hasUpdate = false
+    for (const { index, file } of results) {
+      if (file) {
+        newLocalFiles[index] = file
+        hasUpdate = true
+      }
+    }
+
+    if (hasUpdate) {
+      const updatedMetadata = { ...latestBlock.metadata, localFiles: newLocalFiles }
+      store.dispatch(
+        updateOneBlock({
+          id: blockId,
+          changes: {
+            metadata: updatedMetadata
+          } as Partial<ImageMessageBlock>
+        })
+      )
+      // 持久化到 Dexie，确保重启后不需要重新下载
+      db.message_blocks.update(blockId, { metadata: updatedMetadata } as any).catch(() => {})
+    }
+  })
+}
+
 const ImageBlock: React.FC<Props> = ({ block, isSingle = false }) => {
   const store = useAppStore()
-  const downloadAttempted = useRef(false)
+  const localizeAttempted = useRef(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // 追踪是否在本次组件生命周期内经历过流式渲染
+  // 用于区分"流式响应期间"和"打开会话时加载已有数据"两种场景
+  const seenStreaming = useRef(false)
 
-  // 图片本地化：流完成后或重新打开聊天时，检测并下载远程图片到本地
-  // 使用短延迟避免与 imageCallbacks.onImageGenerated 的并发下载（产生重复文件）
+  // 图片本地化兜底：打开会话时检查是否有未本地化的图片
+  // 主要逻辑在 imageCallbacks.onImageGenerated 中执行，这里仅作兜底
   useEffect(() => {
-    if (downloadAttempted.current) return
-    if (block.status !== MessageBlockStatus.STREAMING && block.status !== MessageBlockStatus.SUCCESS) return
+    if (localizeAttempted.current) return
+    if (block.status !== MessageBlockStatus.SUCCESS) return
 
     const { metadata } = block
     const generateImages = metadata?.generateImageResponse?.images
@@ -77,57 +128,17 @@ const ImageBlock: React.FC<Props> = ({ block, isSingle = false }) => {
 
     if (missingIndices.length === 0) return
 
-    downloadAttempted.current = true
-    // 短延迟：让 imageCallbacks.onImageGenerated 的后台下载先完成
-    // 如果 onImageGenerated 已更新 localFiles，missingIndices 为空，不会重复下载
-    timerRef.current = setTimeout(() => {
-      // 重新获取最新的 block 状态
-      const latestBlock = store.getState().messageBlocks.entities[block.id] as ImageMessageBlock | undefined
-      if (!latestBlock?.metadata?.generateImageResponse?.images?.length) return
+    localizeAttempted.current = true
 
-      const latestLocalFiles = latestBlock.metadata?.localFiles
-      const latestMissingIndices: number[] = []
-      latestBlock.metadata.generateImageResponse.images.forEach((_, index) => {
-        if (!latestLocalFiles?.[index]) {
-          latestMissingIndices.push(index)
-        }
-      })
-
-      if (latestMissingIndices.length === 0) return
-
-      const newLocalFiles: (FileMetadata | null)[] = [
-        ...(latestLocalFiles || latestBlock.metadata.generateImageResponse.images.map(() => null))
-      ]
-
-      Promise.all(
-        latestMissingIndices.map(async (index) => {
-          const file = await downloadImageToLocal(latestBlock.metadata!.generateImageResponse!.images[index])
-          return { index, file }
-        })
-      ).then((results) => {
-        let hasUpdate = false
-        for (const { index, file } of results) {
-          if (file) {
-            newLocalFiles[index] = file
-            hasUpdate = true
-          }
-        }
-
-        if (hasUpdate) {
-          const updatedMetadata = { ...latestBlock.metadata, localFiles: newLocalFiles }
-          store.dispatch(
-            updateOneBlock({
-              id: block.id,
-              changes: {
-                metadata: updatedMetadata
-              } as Partial<ImageMessageBlock>
-            })
-          )
-          // 持久化到 Dexie，确保重启后不需要重新下载
-          db.message_blocks.update(block.id, { metadata: updatedMetadata } as any).catch(() => {})
-        }
-      })
-    }, 1000)
+    if (seenStreaming.current) {
+      // 流式响应期间：延迟执行，给 imageCallbacks 的后台下载留时间
+      timerRef.current = setTimeout(() => {
+        doLocalizeImages(block.id, store)
+      }, 2000)
+    } else {
+      // 打开会话加载：直接执行，无需等待
+      doLocalizeImages(block.id, store)
+    }
 
     return () => {
       if (timerRef.current) {
@@ -136,6 +147,11 @@ const ImageBlock: React.FC<Props> = ({ block, isSingle = false }) => {
       }
     }
   }, [block.id, block.metadata, block.status, store])
+
+  // 追踪流式状态变化
+  if (block.status === MessageBlockStatus.STREAMING) {
+    seenStreaming.current = true
+  }
 
   if (block.status === MessageBlockStatus.PENDING) {
     return <Skeleton.Image active style={{ width: 200, height: 200 }} />

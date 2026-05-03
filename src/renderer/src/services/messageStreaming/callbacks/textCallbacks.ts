@@ -1,7 +1,9 @@
 import { loggerService } from '@logger'
+import db from '@renderer/databases'
 import { WebSearchSource } from '@renderer/types'
 import { CitationMessageBlock, MessageBlock, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import { createMainTextBlock } from '@renderer/utils/messageUtils/create'
+import { hasLocalizableImages, localizeMarkdownImages } from '@renderer/utils/markdown'
 
 import { BlockManager } from '../BlockManager'
 
@@ -61,9 +63,25 @@ export const createTextCallbacks = (deps: TextCallbacksDependencies) => {
           status: MessageBlockStatus.SUCCESS
         }
         blockManager.smartBlockUpdate(mainTextBlockId, changes, MessageBlockType.MAIN_TEXT, true)
+
+        // 响应结束后立即本地化图片（fire-and-forget）
+        // 组件 useEffect 作为兜底，双重保险
+        if (hasLocalizableImages(finalText)) {
+          const blockId = mainTextBlockId
+          localizeMarkdownImages(finalText).then(({ content: localizedContent }) => {
+            if (localizedContent !== finalText) {
+              blockManager.smartBlockUpdate(
+                blockId,
+                { content: localizedContent } as Partial<MessageBlock>,
+                MessageBlockType.MAIN_TEXT,
+                true
+              )
+              db.message_blocks.update(blockId, { content: localizedContent } as any).catch(() => {})
+            }
+          })
+        }
+
         mainTextBlockId = null
-        // 图片本地化不在流式回调中处理，由 MainTextBlock 组件的 useEffect 负责
-        // 这样避免阻塞流式管道、避免重复下载
       } else {
         logger.warn(
           `[onTextComplete] Received text.complete but last block was not MAIN_TEXT (was ${blockManager.lastBlockType}) or lastBlockId is null.`

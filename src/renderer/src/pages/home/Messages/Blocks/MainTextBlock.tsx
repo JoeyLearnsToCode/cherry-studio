@@ -25,18 +25,18 @@ interface Props {
 const MainTextBlock: React.FC<Props> = ({ block, citationBlockId, role, mentions = [] }) => {
   const { renderInputMessageAsMarkdown } = useSettings()
   const store = useAppStore()
-  const downloadAttempted = useRef(false)
+  const localizeAttempted = useRef(false)
 
   const rawCitations = useSelector((state: any) => selectFormattedCitationsByBlockId(state, citationBlockId))
 
-  // 图片本地化：流完成后或重新打开聊天时，检测并下载远程/base64 图片到本地
-  // 仅执行一次，同时更新 Redux + Dexie，确保重启后不重复替换
+  // 图片本地化兜底：打开会话时检查是否有未本地化的图片
+  // 主要逻辑在 textCallbacks.onTextComplete 中执行，这里仅作兜底
   useEffect(() => {
-    if (downloadAttempted.current) return
+    if (localizeAttempted.current) return
     if (block.status !== MessageBlockStatus.SUCCESS) return
     if (!hasLocalizableImages(block.content)) return
 
-    downloadAttempted.current = true
+    localizeAttempted.current = true
     const originalContent = block.content
     localizeMarkdownImages(originalContent).then(({ content: localizedContent }) => {
       if (localizedContent !== originalContent) {
