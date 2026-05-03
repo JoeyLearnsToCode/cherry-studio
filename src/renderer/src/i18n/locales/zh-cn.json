@@ -364,7 +364,10 @@
       "upload": {
         "document": "上传文档（模型不支持图片）",
         "label": "上传图片或文档",
-        "upload_from_local": "上传本地文件..."
+        "upload_from_local": "上传本地文件...",
+        "select_uploaded": "选择已上传文件",
+        "select_uploaded_files": "选择已上传文件",
+        "selected_count": "已选择 {{count}} 个文件"
       },
       "url_context": "网页上下文",
       "web_search": {
@@ -1340,7 +1343,8 @@
       }
     },
     "mention": {
-      "title": "切换模型回答"
+      "title": "切换模型回答",
+      "respondTitle": "选择模型回答"
     },
     "message": {
       "code_style": "代码风格",

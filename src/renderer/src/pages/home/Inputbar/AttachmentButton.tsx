@@ -1,9 +1,11 @@
-import { FileType } from '@renderer/types'
+import { FileMetadata, FileType } from '@renderer/types'
 import { filterSupportedFiles } from '@renderer/utils/file'
-import { Tooltip } from 'antd'
-import { Paperclip } from 'lucide-react'
+import { Dropdown, Tooltip } from 'antd'
+import { FileUp, Paperclip, Upload } from 'lucide-react'
 import { FC, useCallback, useImperativeHandle, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import SelectUploadedFilesModal from './SelectUploadedFilesModal'
 
 export interface AttachmentButtonRef {
   openQuickPanel: () => void
@@ -30,6 +32,7 @@ const AttachmentButton: FC<Props> = ({
 }) => {
   const { t } = useTranslation()
   const [selecting, setSelecting] = useState<boolean>(false)
+  const [showUploadedFilesModal, setShowUploadedFilesModal] = useState(false)
 
   const onSelectFile = useCallback(async () => {
     if (selecting) {
@@ -75,20 +78,66 @@ const AttachmentButton: FC<Props> = ({
     onSelectFile()
   }, [onSelectFile])
 
+  const handleSelectUploadedFiles = useCallback(
+    (selectedFiles: FileMetadata[]) => {
+      setFiles([...files, ...selectedFiles])
+      setShowUploadedFilesModal(false)
+    },
+    [files, setFiles]
+  )
+
   useImperativeHandle(ref, () => ({
     openQuickPanel
   }))
 
+  const menuItems = [
+    {
+      key: 'upload_local',
+      label: t('chat.input.upload.upload_from_local'),
+      icon: <Upload size={14} />
+    },
+    {
+      key: 'select_uploaded',
+      label: t('chat.input.upload.select_uploaded'),
+      icon: <FileUp size={14} />
+    }
+  ]
+
+  const handleMenuClick = useCallback(
+    (info: { key: string }) => {
+      if (info.key === 'upload_local') {
+        onSelectFile()
+      } else if (info.key === 'select_uploaded') {
+        setShowUploadedFilesModal(true)
+      }
+    },
+    [onSelectFile]
+  )
+
   return (
-    <Tooltip
-      placement="top"
-      title={couldAddImageFile ? t('chat.input.upload.label') : t('chat.input.upload.document')}
-      mouseLeaveDelay={0}
-      arrow>
-      <ToolbarButton type="text" onClick={onSelectFile} disabled={disabled}>
-        <Paperclip size={18} style={{ color: files.length ? 'var(--color-primary)' : 'var(--color-icon)' }} />
-      </ToolbarButton>
-    </Tooltip>
+    <>
+      <Dropdown
+        menu={{ items: menuItems, onClick: handleMenuClick }}
+        trigger={['click']}
+        placement="topLeft">
+        <Tooltip
+          placement="top"
+          title={couldAddImageFile ? t('chat.input.upload.label') : t('chat.input.upload.document')}
+          mouseLeaveDelay={0}
+          arrow>
+          <ToolbarButton type="text" disabled={disabled}>
+            <Paperclip size={18} style={{ color: files.length ? 'var(--color-primary)' : 'var(--color-icon)' }} />
+          </ToolbarButton>
+        </Tooltip>
+      </Dropdown>
+      <SelectUploadedFilesModal
+        open={showUploadedFilesModal}
+        onClose={() => setShowUploadedFilesModal(false)}
+        onConfirm={handleSelectUploadedFiles}
+        extensions={extensions}
+        couldAddImageFile={couldAddImageFile}
+      />
+    </>
   )
 }
 

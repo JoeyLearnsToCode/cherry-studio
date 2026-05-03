@@ -1333,7 +1333,8 @@
       }
     },
     "mention": {
-      "title": "Alternar modelo de resposta"
+      "title": "Alternar modelo de resposta",
+      "respondTitle": "Selecionar modelo para responder"
     },
     "message": {
       "code_style": "Estilo de código",

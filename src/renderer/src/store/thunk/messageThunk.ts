@@ -1081,6 +1081,87 @@ export const appendAssistantResponseThunk =
   }
 
 /**
+ * Thunk to respond to a user message with a selected model.
+ * Creates a new assistant message whose askId is the user message's id,
+ * inserting it after the last existing assistant message with the same askId
+ * (or after the user message if no such assistant exists).
+ */
+export const respondToUserMessageThunk =
+  (
+    topicId: Topic['id'],
+    userMessageId: string,
+    newModel: Model,
+    assistant: Assistant,
+    traceId?: string
+  ) =>
+  async (dispatch: AppDispatch, getState: () => RootState) => {
+    try {
+      const state = getState()
+
+      const userMsg = state.messages.entities[userMessageId]
+      if (!userMsg) {
+        logger.error(`[respondToUserMessageThunk] User message ${userMessageId} not found.`)
+        return
+      }
+      if (userMsg.role !== 'user') {
+        logger.error(`[respondToUserMessageThunk] Message ${userMessageId} is not a user message.`)
+        return
+      }
+
+      const askId = userMsg.id
+
+      // Create the new assistant message stub
+      const newAssistantStub = createAssistantMessage(assistant.id, topicId, {
+        askId,
+        model: newModel,
+        modelId: newModel.id,
+        traceId
+      })
+
+      // Find insertion position: after the last assistant message with the same askId,
+      // or after the user message if no such assistant exists
+      const currentTopicMessageIds = getState().messages.messageIdsByTopic[topicId] || []
+      let insertAtIndex = -1
+
+      // Walk from the end to find the last assistant message with the same askId
+      for (let i = currentTopicMessageIds.length - 1; i >= 0; i--) {
+        const msgId = currentTopicMessageIds[i]
+        const msg = getState().messages.entities[msgId]
+        if (msg && msg.role === 'assistant' && msg.askId === askId) {
+          insertAtIndex = i + 1
+          break
+        }
+      }
+
+      // Fallback: insert after the user message
+      if (insertAtIndex === -1) {
+        const userMsgIndex = currentTopicMessageIds.findIndex((id) => id === userMessageId)
+        insertAtIndex = userMsgIndex !== -1 ? userMsgIndex + 1 : currentTopicMessageIds.length
+      }
+
+      dispatch(newMessagesActions.insertMessageAtIndex({ topicId, message: newAssistantStub, index: insertAtIndex }))
+
+      await saveMessageAndBlocksToDB(newAssistantStub, [], insertAtIndex)
+
+      const assistantConfigForThisCall = { ...assistant, model: newModel }
+      const queue = getTopicQueue(topicId)
+      queue.add(async () => {
+        await fetchAndProcessAssistantResponseImpl(
+          dispatch,
+          getState,
+          topicId,
+          assistantConfigForThisCall,
+          newAssistantStub
+        )
+      })
+    } catch (error) {
+      logger.error(`[respondToUserMessageThunk] Error responding to user message:`, error as Error)
+    } finally {
+      finishTopicLoading(topicId)
+    }
+  }
+
+/**
  * Clones messages from a source topic up to a specified index into a *pre-existing* new topic.
  * Generates new unique IDs for all cloned messages and blocks.
  * Updates the DB and Redux message/block state for the new topic.

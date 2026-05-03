@@ -364,7 +364,10 @@
       "upload": {
         "document": "ドキュメントをアップロード（モデルは画像をサポートしません）",
         "label": "画像またはドキュメントをアップロード",
-        "upload_from_local": "ローカルファイルをアップロード..."
+        "upload_from_local": "ローカルファイルをアップロード...",
+        "select_uploaded": "アップロード済みファイルを選択",
+        "select_uploaded_files": "アップロード済みファイルを選択",
+        "selected_count": "{{count}}件のファイルを選択済み"
       },
       "url_context": "URLコンテキスト",
       "web_search": {
@@ -1340,7 +1343,8 @@
       }
     },
     "mention": {
-      "title": "モデルを切り替える"
+      "title": "モデルを切り替える",
+      "respondTitle": "モデルを選択して回答"
     },
     "message": {
       "code_style": "コードスタイル",

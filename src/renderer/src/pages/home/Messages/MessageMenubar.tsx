@@ -94,6 +94,7 @@ const MessageMenubar: FC<Props> = (props) => {
     regenerateAssistantMessage,
     getTranslationUpdater,
     appendAssistantResponse,
+    respondToUserMessage,
     removeMessageBlock
   } = useMessageOperations(topic)
 
@@ -430,6 +431,20 @@ const MessageMenubar: FC<Props> = (props) => {
     }
   }, [isAssistantMessage, message.askId, topic.id])
 
+  // 用户消息的模型筛选器：排除 embedding/rerank 模型，有图片时仅显示视觉模型
+  const userMessageModelFilter = useMemo(() => {
+    const defaultFilter = (model: Model) => !isEmbeddingModel(model) && !isRerankModel(model)
+    if (message.role !== 'user') return defaultFilter
+
+    const userMessageBlocks = message.blocks.map((blockId) =>
+      messageBlocksSelectors.selectById(store.getState(), blockId)
+    )
+    if (userMessageBlocks.some((block) => block && block.type === MessageBlockType.IMAGE)) {
+      return (m: Model) => isVisionModel(m) && defaultFilter(m)
+    }
+    return defaultFilter
+  }, [message.role, message.blocks])
+
   const onMentionModel = useCallback(
     async (e: React.MouseEvent) => {
       e.stopPropagation()
@@ -438,6 +453,16 @@ const MessageMenubar: FC<Props> = (props) => {
       appendAssistantResponse(message, selectedModel, { ...assistant, model: selectedModel })
     },
     [appendAssistantResponse, assistant, mentionModelFilter, message, model]
+  )
+
+  const onRespondToUserMessage = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation()
+      const selectedModel = await SelectModelPopup.show({ model, filter: userMessageModelFilter })
+      if (!selectedModel) return
+      respondToUserMessage(message, selectedModel, { ...assistant, model: selectedModel })
+    },
+    [respondToUserMessage, assistant, userMessageModelFilter, message, model]
   )
 
   const onUseful = useCallback(
@@ -477,6 +502,13 @@ const MessageMenubar: FC<Props> = (props) => {
           <Tooltip title={t('common.edit')} mouseEnterDelay={0.8}>
             <ActionButton className="message-action-button" onClick={onEdit} $softHoverBg={softHoverBg}>
               <EditIcon size={15} />
+            </ActionButton>
+          </Tooltip>
+        )}
+        {message.role === 'user' && (
+          <Tooltip title={t('message.mention.respondTitle')} mouseEnterDelay={0.8}>
+            <ActionButton className="message-action-button" onClick={onRespondToUserMessage} $softHoverBg={softHoverBg}>
+              <AtSign size={15} />
             </ActionButton>
           </Tooltip>
         )}

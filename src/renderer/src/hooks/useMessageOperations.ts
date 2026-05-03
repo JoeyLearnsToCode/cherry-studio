@@ -19,6 +19,7 @@ import {
   removeBlocksThunk,
   resendMessageThunk,
   resendUserMessageWithEditThunk,
+  respondToUserMessageThunk,
   updateMessageAndBlocksThunk,
   updateTranslationBlockThunk
 } from '@renderer/store/thunk/messageThunk'
@@ -221,6 +222,30 @@ export function useMessageOperations(topic: Topic) {
           newModel,
           assistant,
           existingAssistantMessage.traceId
+        )
+      )
+    },
+    [dispatch, topic.id]
+  )
+
+  /**
+   * 使用指定模型回答选中的用户消息。 / Responds to a user message using a specified model.
+   * The user message's id becomes the new assistant message's askId.
+   */
+  const respondToUserMessage = useCallback(
+    async (userMessage: Message, newModel: Model, assistant: Assistant) => {
+      await appendTrace(userMessage, newModel)
+      if (userMessage.role !== 'user') {
+        logger.error('respondToUserMessage should only be called for a user message.')
+        return
+      }
+      await dispatch(
+        respondToUserMessageThunk(
+          topic.id,
+          userMessage.id,
+          newModel,
+          assistant,
+          userMessage.traceId
         )
       )
     },
@@ -481,6 +506,7 @@ export function useMessageOperations(topic: Topic) {
     appendMessage,
     resendUserMessageWithEdit,
     appendAssistantResponse,
+    respondToUserMessage,
     createNewContext,
     clearTopicMessages,
     pauseMessages,

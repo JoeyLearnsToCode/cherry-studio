@@ -364,7 +364,10 @@
       "upload": {
         "document": "Upload document file (model does not support images)",
         "label": "Upload image or document file",
-        "upload_from_local": "Upload local file..."
+        "upload_from_local": "Upload local file...",
+        "select_uploaded": "Select uploaded files",
+        "select_uploaded_files": "Select uploaded files",
+        "selected_count": "{{count}} file(s) selected"
       },
       "url_context": "URL Context",
       "web_search": {
@@ -1340,7 +1343,8 @@
       }
     },
     "mention": {
-      "title": "Switch model answer"
+      "title": "Switch model answer",
+      "respondTitle": "Select model to answer"
     },
     "message": {
       "code_style": "Code style",
