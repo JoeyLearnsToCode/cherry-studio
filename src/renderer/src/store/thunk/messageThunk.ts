@@ -367,7 +367,6 @@ const fetchAndProcessAssistantResponseImpl = async (
       messages: messagesForContext,
       assistant: assistant,
       onChunkReceived: streamProcessorCallbacks,
-      onError: callbacks.onError,
       keepLastAssistantMessage: options?.includeLastAssistantInContext ?? false
     })
     endSpan({

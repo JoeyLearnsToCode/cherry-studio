@@ -25,6 +25,7 @@ import {
 const logger = loggerService.withContext('NotesSettings')
 
 const NotesSettings: FC = () => {
+  const dispatch = useAppDispatch()
   const { theme } = useTheme()
   const { t } = useTranslation()
   const { settings, updateSettings, notesPath, updateNotesPath } = useNotesSettings()
