@@ -3367,6 +3367,7 @@
       },
       "navigation": {
         "anchor": "Message Anchor",
+        "both": "Anchor + Buttons",
         "buttons": "Navigation Buttons",
         "label": "Navigation bar",
         "none": "None"

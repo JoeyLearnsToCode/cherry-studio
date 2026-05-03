@@ -373,11 +373,12 @@ const SettingsTab: FC<Props> = (props) => {
             <SettingRowTitleSmall>{t('settings.messages.navigation.label')}</SettingRowTitleSmall>
             <Selector
               value={messageNavigation}
-              onChange={(value) => dispatch(setMessageNavigation(value as 'none' | 'buttons' | 'anchor'))}
+              onChange={(value) => dispatch(setMessageNavigation(value as 'none' | 'buttons' | 'anchor' | 'both'))}
               options={[
                 { value: 'none', label: t('settings.messages.navigation.none') },
                 { value: 'buttons', label: t('settings.messages.navigation.buttons') },
-                { value: 'anchor', label: t('settings.messages.navigation.anchor') }
+                { value: 'anchor', label: t('settings.messages.navigation.anchor') },
+                { value: 'both', label: t('settings.messages.navigation.both') }
               ]}
             />
           </SettingRow>

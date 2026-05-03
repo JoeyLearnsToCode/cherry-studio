@@ -289,7 +289,7 @@ const MessageGroup = ({ messages, topic, registerMessageElement }: Props) => {
     <MessageEditingProvider>
       <GroupContainer
         id={messages[0].askId ? `message-group-${messages[0].askId}` : undefined}
-        className={classNames([multiModelMessageStyle, { 'multi-select-mode': isMultiSelectMode }])}
+        className={classNames(['message-group', multiModelMessageStyle, { 'multi-select-mode': isMultiSelectMode }])}
         style={{ maxWidth }}>
         <GridContainer
           $count={messageLength}

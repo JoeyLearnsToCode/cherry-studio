@@ -3367,6 +3367,7 @@
       },
       "navigation": {
         "anchor": "对话锚点",
+        "both": "对话锚点+上下按钮",
         "buttons": "上下按钮",
         "label": "对话导航按钮",
         "none": "不显示"

@@ -3357,6 +3357,7 @@
       },
       "navigation": {
         "anchor": "Ancre de conversation",
+        "both": "Ancre + Boutons",
         "buttons": "Boutons haut/bas",
         "label": "Bouton de navigation des conversations",
         "none": "Ne pas afficher"

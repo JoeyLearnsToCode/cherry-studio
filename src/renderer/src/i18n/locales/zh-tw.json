@@ -3367,6 +3367,7 @@
       },
       "navigation": {
         "anchor": "對話錨點",
+        "both": "對話錨點+上下按鈕",
         "buttons": "上下按鈕",
         "label": "訊息導航",
         "none": "不顯示"

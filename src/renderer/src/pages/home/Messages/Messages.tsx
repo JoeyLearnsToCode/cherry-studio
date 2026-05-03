@@ -336,7 +336,7 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
 
         {showPrompt && <Prompt assistant={assistant} key={assistant.prompt} topic={topic} />}
       </NarrowLayout>
-      {messageNavigation === 'anchor' && <MessageAnchorLine messages={displayMessages} />}
+      {(messageNavigation === 'anchor' || messageNavigation === 'both') && <MessageAnchorLine messages={displayMessages} />}
       <SelectionBox
         isMultiSelectMode={isMultiSelectMode}
         scrollContainerRef={scrollContainerRef}

@@ -1,116 +1,45 @@
 import {
   ArrowDownOutlined,
   ArrowUpOutlined,
-  CloseOutlined,
   HistoryOutlined,
   VerticalAlignBottomOutlined,
   VerticalAlignTopOutlined
 } from '@ant-design/icons'
-import { useSettings } from '@renderer/hooks/useSettings'
 import { RootState } from '@renderer/store'
-// import { selectCurrentTopicId } from '@renderer/store/newMessage'
 import { Button, Drawer, Tooltip } from 'antd'
-import { FC, useCallback, useEffect, useRef, useState } from 'react'
+import { FC, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSelector } from 'react-redux'
 import styled from 'styled-components'
 
 import ChatFlowHistory from './ChatFlowHistory'
 
-// Exclude some areas from the navigation
-const EXCLUDED_SELECTORS = [
-  '.MessageFooter',
-  '.code-toolbar',
-  '.ant-collapse-header',
-  '.group-menu-bar',
-  '.code-block',
-  '.message-editor',
-  '.table-wrapper'
-]
-
-// Gap between the navigation bar and the right element
-const RIGHT_GAP = 16
+const POSITION_GAP = 16
 
 interface ChatNavigationProps {
   containerId: string
+  position?: 'left' | 'right'
 }
 
-const ChatNavigation: FC<ChatNavigationProps> = ({ containerId }) => {
+const ChatNavigation: FC<ChatNavigationProps> = ({ containerId, position = 'right' }) => {
   const { t } = useTranslation()
-  const [isVisible, setIsVisible] = useState(false)
-  const [isNearButtons, setIsNearButtons] = useState(false)
-  const hideTimerRef = useRef<NodeJS.Timeout>(undefined)
   const [showChatHistory, setShowChatHistory] = useState(false)
-  const [manuallyClosedUntil, setManuallyClosedUntil] = useState<number | null>(null)
   const currentTopicId = useSelector((state: RootState) => state.messages.currentTopicId)
-  const lastMoveTime = useRef(0)
-  const { topicPosition, showTopics } = useSettings()
-  const showRightTopics = topicPosition === 'right' && showTopics
-
-  // Reset hide timer and make buttons visible
-  const resetHideTimer = useCallback(() => {
-    setIsVisible(true)
-
-    // Only set a hide timer if cursor is not near the buttons
-    if (!isNearButtons) {
-      clearTimeout(hideTimerRef.current)
-      hideTimerRef.current = setTimeout(() => {
-        setIsVisible(false)
-      }, 1500)
-    }
-  }, [isNearButtons])
-
-  // Handle mouse entering button area
-  const handleMouseEnter = useCallback(() => {
-    if (manuallyClosedUntil && Date.now() < manuallyClosedUntil) {
-      return
-    }
-
-    setIsNearButtons(true)
-    setIsVisible(true)
-
-    // Clear any existing hide timer
-    clearTimeout(hideTimerRef.current)
-  }, [manuallyClosedUntil])
-
-  // Handle mouse leaving button area
-  const handleMouseLeave = useCallback(() => {
-    setIsNearButtons(false)
-
-    // Set a timer to hide the buttons
-    hideTimerRef.current = setTimeout(() => {
-      setIsVisible(false)
-    }, 500)
-
-    return () => {
-      clearTimeout(hideTimerRef.current)
-    }
-  }, [])
 
   const handleChatHistoryClick = () => {
     setShowChatHistory(true)
-    resetHideTimer()
   }
 
   const handleDrawerClose = () => {
     setShowChatHistory(false)
   }
 
-  const findUserMessages = () => {
+  // Find all message group elements
+  const findMessageGroups = () => {
     const container = document.getElementById(containerId)
     if (!container) return []
 
-    const userMessages = Array.from(container.getElementsByClassName('message-user'))
-    return userMessages as HTMLElement[]
-  }
-
-  const findAssistantMessages = () => {
-    const container = document.getElementById(containerId)
-
-    if (!container) return []
-
-    const assistantMessages = Array.from(container.getElementsByClassName('message-assistant'))
-    return assistantMessages as HTMLElement[]
+    return Array.from(container.querySelectorAll('.message-group')) as HTMLElement[]
   }
 
   const scrollToMessage = (element: HTMLElement) => {
@@ -127,23 +56,23 @@ const ChatNavigation: FC<ChatNavigationProps> = ({ containerId }) => {
     container && container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
   }
 
-  const getCurrentVisibleIndex = (direction: 'up' | 'down') => {
-    const userMessages = findUserMessages()
-    const assistantMessages = findAssistantMessages()
+  // Get the index of the currently visible message group based on scroll direction
+  const getCurrentVisibleGroupIndex = (direction: 'up' | 'down') => {
+    const groups = findMessageGroups()
     const container = document.getElementById(containerId)
 
-    if (!container) return -1
+    if (!container || groups.length === 0) return -1
 
     const containerRect = container.getBoundingClientRect()
     const visibleThreshold = containerRect.height * 0.1
 
-    let visibleIndices: number[] = []
+    const visibleIndices: number[] = []
 
-    for (let i = 0; i < userMessages.length; i++) {
-      const messageRect = userMessages[i].getBoundingClientRect()
+    for (let i = 0; i < groups.length; i++) {
+      const groupRect = groups[i].getBoundingClientRect()
       const visibleHeight =
-        Math.min(messageRect.bottom, containerRect.bottom) - Math.max(messageRect.top, containerRect.top)
-      if (visibleHeight > 0 && visibleHeight >= Math.min(messageRect.height, visibleThreshold)) {
+        Math.min(groupRect.bottom, containerRect.bottom) - Math.max(groupRect.top, containerRect.top)
+      if (visibleHeight > 0 && visibleHeight >= Math.min(groupRect.height, visibleThreshold)) {
         visibleIndices.push(i)
       }
     }
@@ -152,198 +81,66 @@ const ChatNavigation: FC<ChatNavigationProps> = ({ containerId }) => {
       return direction === 'up' ? Math.max(...visibleIndices) : Math.min(...visibleIndices)
     }
 
-    visibleIndices = []
-    for (let i = 0; i < assistantMessages.length; i++) {
-      const messageRect = assistantMessages[i].getBoundingClientRect()
-      const visibleHeight =
-        Math.min(messageRect.bottom, containerRect.bottom) - Math.max(messageRect.top, containerRect.top)
-      if (visibleHeight > 0 && visibleHeight >= Math.min(messageRect.height, visibleThreshold)) {
-        visibleIndices.push(i)
-      }
-    }
-
-    if (visibleIndices.length > 0) {
-      const assistantIndex = direction === 'up' ? Math.max(...visibleIndices) : Math.min(...visibleIndices)
-      return assistantIndex < userMessages.length ? assistantIndex : userMessages.length - 1
-    }
-
     return -1
   }
 
-  // 修改 handleCloseChatNavigation 函数
-  const handleCloseChatNavigation = () => {
-    setIsVisible(false)
-    // 设置手动关闭状态，1分钟内不响应鼠标靠近事件
-    setManuallyClosedUntil(Date.now() + 60000) // 60000毫秒 = 1分钟
-  }
-
   const handleScrollToTop = () => {
-    resetHideTimer()
     scrollToTop()
   }
 
   const handleScrollToBottom = () => {
-    resetHideTimer()
     scrollToBottom()
   }
 
   const handleNextMessage = () => {
-    resetHideTimer()
-    const userMessages = findUserMessages()
-    const assistantMessages = findAssistantMessages()
+    const groups = findMessageGroups()
 
-    if (userMessages.length === 0 && assistantMessages.length === 0) {
-      // window.message.info({ content: t('chat.navigation.last'), key: 'navigation-info' })
+    if (groups.length === 0) {
       return scrollToBottom()
     }
 
-    const visibleIndex = getCurrentVisibleIndex('down')
+    const visibleIndex = getCurrentVisibleGroupIndex('down')
 
     if (visibleIndex === -1) {
-      // window.message.info({ content: t('chat.navigation.last'), key: 'navigation-info' })
       return scrollToBottom()
     }
 
     const targetIndex = visibleIndex - 1
 
     if (targetIndex < 0) {
-      // window.message.info({ content: t('chat.navigation.last'), key: 'navigation-info' })
       return scrollToBottom()
     }
 
-    scrollToMessage(userMessages[targetIndex])
+    scrollToMessage(groups[targetIndex])
   }
 
   const handlePrevMessage = () => {
-    resetHideTimer()
-    const userMessages = findUserMessages()
-    const assistantMessages = findAssistantMessages()
-    if (userMessages.length === 0 && assistantMessages.length === 0) {
-      // window.message.info({ content: t('chat.navigation.first'), key: 'navigation-info' })
+    const groups = findMessageGroups()
+
+    if (groups.length === 0) {
       return scrollToTop()
     }
 
-    const visibleIndex = getCurrentVisibleIndex('up')
+    const visibleIndex = getCurrentVisibleGroupIndex('up')
 
     if (visibleIndex === -1) {
-      // window.message.info({ content: t('chat.navigation.first'), key: 'navigation-info' })
       return scrollToTop()
     }
 
     const targetIndex = visibleIndex + 1
 
-    if (targetIndex >= userMessages.length) {
-      // window.message.info({ content: t('chat.navigation.first'), key: 'navigation-info' })
+    if (targetIndex >= groups.length) {
       return scrollToTop()
     }
 
-    scrollToMessage(userMessages[targetIndex])
+    scrollToMessage(groups[targetIndex])
   }
-
-  // Set up scroll event listener and mouse position tracking
-  useEffect(() => {
-    const container = document.getElementById(containerId)
-    const messagesContainer = container?.closest('.messages-container') as HTMLElement
-
-    if (!container) return
-
-    // Handle scroll events on the container
-    const handleScroll = () => {
-      // Only show buttons when scrolling if cursor is near the button area
-      if (isNearButtons) {
-        resetHideTimer()
-      }
-    }
-
-    // Throttled mouse move handler to improve performance
-    const handleMouseMove = (e: MouseEvent) => {
-      // 如果在手动关闭期间，不响应鼠标移动事件
-      if (manuallyClosedUntil && Date.now() < manuallyClosedUntil) {
-        return
-      }
-
-      // Throttle mouse move to every 50ms for performance
-      const now = Date.now()
-      if (now - lastMoveTime.current < 50) return
-      lastMoveTime.current = now
-
-      // Calculate if the mouse is in the trigger area
-      const triggerWidth = 60 // Same as the width in styled component
-
-      // Safe way to calculate position when using calc expressions
-      let rightOffset = RIGHT_GAP // Default right offset
-      if (showRightTopics) {
-        // When topics are shown on right, we need to account for topic list width
-        rightOffset += 275 // --topic-list-width
-      }
-
-      const rightPosition = window.innerWidth - rightOffset - triggerWidth
-      const topPosition = window.innerHeight * 0.35 // 35% from top
-      const height = window.innerHeight * 0.3 // 30% of window height
-
-      const target = e.target as HTMLElement
-      const isInExcludedArea = EXCLUDED_SELECTORS.some((selector) => target.closest(selector))
-
-      const isInTriggerArea =
-        !isInExcludedArea &&
-        e.clientX > rightPosition &&
-        e.clientX < rightPosition + triggerWidth + RIGHT_GAP &&
-        e.clientY > topPosition &&
-        e.clientY < topPosition + height
-
-      // Update state based on mouse position
-      if (isInTriggerArea && !isNearButtons) {
-        handleMouseEnter()
-      } else if (!isInTriggerArea && isNearButtons) {
-        // Only trigger mouse leave when not in the navigation area
-        // This ensures we don't leave when hovering over the actual buttons
-        handleMouseLeave()
-      }
-    }
-
-    // Use passive: true for better scroll performance
-    container.addEventListener('scroll', handleScroll, { passive: true })
-
-    if (messagesContainer) {
-      // Listen to the messages container (but with global coordinates)
-      messagesContainer.addEventListener('mousemove', handleMouseMove)
-    } else {
-      window.addEventListener('mousemove', handleMouseMove)
-    }
-
-    return () => {
-      container.removeEventListener('scroll', handleScroll)
-      if (messagesContainer) {
-        messagesContainer.removeEventListener('mousemove', handleMouseMove)
-      } else {
-        window.removeEventListener('mousemove', handleMouseMove)
-      }
-      clearTimeout(hideTimerRef.current)
-    }
-  }, [
-    containerId,
-    resetHideTimer,
-    isNearButtons,
-    handleMouseEnter,
-    handleMouseLeave,
-    showRightTopics,
-    manuallyClosedUntil
-  ])
 
   return (
     <>
-      <NavigationContainer $isVisible={isVisible} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
+      <NavigationContainer $position={position}>
         <ButtonGroup>
-          <Tooltip title={t('chat.navigation.close')} placement="left" mouseEnterDelay={0.5}>
-            <NavigationButton
-              type="text"
-              icon={<CloseOutlined />}
-              onClick={handleCloseChatNavigation}
-              aria-label={t('chat.navigation.close')}
-            />
-          </Tooltip>
-          <Divider />
-          <Tooltip title={t('chat.navigation.top')} placement="left" mouseEnterDelay={0.5}>
+          <Tooltip title={t('chat.navigation.top')} placement={position === 'left' ? 'right' : 'left'} mouseEnterDelay={0.5}>
             <NavigationButton
               type="text"
               icon={<VerticalAlignTopOutlined />}
@@ -352,7 +149,7 @@ const ChatNavigation: FC<ChatNavigationProps> = ({ containerId }) => {
             />
           </Tooltip>
           <Divider />
-          <Tooltip title={t('chat.navigation.prev')} placement="left" mouseEnterDelay={0.5}>
+          <Tooltip title={t('chat.navigation.prev')} placement={position === 'left' ? 'right' : 'left'} mouseEnterDelay={0.5}>
             <NavigationButton
               type="text"
               icon={<ArrowUpOutlined />}
@@ -361,7 +158,7 @@ const ChatNavigation: FC<ChatNavigationProps> = ({ containerId }) => {
             />
           </Tooltip>
           <Divider />
-          <Tooltip title={t('chat.navigation.next')} placement="left" mouseEnterDelay={0.5}>
+          <Tooltip title={t('chat.navigation.next')} placement={position === 'left' ? 'right' : 'left'} mouseEnterDelay={0.5}>
             <NavigationButton
               type="text"
               icon={<ArrowDownOutlined />}
@@ -370,7 +167,7 @@ const ChatNavigation: FC<ChatNavigationProps> = ({ containerId }) => {
             />
           </Tooltip>
           <Divider />
-          <Tooltip title={t('chat.navigation.bottom')} placement="left" mouseEnterDelay={0.5}>
+          <Tooltip title={t('chat.navigation.bottom')} placement={position === 'left' ? 'right' : 'left'} mouseEnterDelay={0.5}>
             <NavigationButton
               type="text"
               icon={<VerticalAlignBottomOutlined />}
@@ -379,7 +176,7 @@ const ChatNavigation: FC<ChatNavigationProps> = ({ containerId }) => {
             />
           </Tooltip>
           <Divider />
-          <Tooltip title={t('chat.navigation.history')} placement="left" mouseEnterDelay={0.5}>
+          <Tooltip title={t('chat.navigation.history')} placement={position === 'left' ? 'right' : 'left'} mouseEnterDelay={0.5}>
             <NavigationButton
               type="text"
               icon={<HistoryOutlined />}
@@ -411,20 +208,15 @@ const ChatNavigation: FC<ChatNavigationProps> = ({ containerId }) => {
 }
 
 interface NavigationContainerProps {
-  $isVisible: boolean
+  $position: 'left' | 'right'
 }
 
 const NavigationContainer = styled.div<NavigationContainerProps>`
   position: fixed;
-  right: ${RIGHT_GAP}px;
+  ${(props) => (props.$position === 'left' ? `left: ${POSITION_GAP}px;` : `right: ${POSITION_GAP}px;`)}
   top: 50%;
-  transform: translateY(-50%) translateX(${(props) => (props.$isVisible ? 0 : '100%')});
+  transform: translateY(-50%);
   z-index: 999;
-  opacity: ${(props) => (props.$isVisible ? 1 : 0)};
-  transition:
-    transform 0.3s ease-in-out,
-    opacity 0.3s ease-in-out;
-  pointer-events: ${(props) => (props.$isVisible ? 'auto' : 'none')};
 `
 
 const ButtonGroup = styled.div`

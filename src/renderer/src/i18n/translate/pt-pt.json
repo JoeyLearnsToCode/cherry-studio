@@ -3357,6 +3357,7 @@
       },
       "navigation": {
         "anchor": "Ancoragem de conversa",
+        "both": "Ancoragem + Botões",
         "buttons": "Botões de cima e de baixo",
         "label": "Botão de navegação de conversa",
         "none": "Não mostrar"

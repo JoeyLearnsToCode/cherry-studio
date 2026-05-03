@@ -147,7 +147,9 @@ const Chat: FC<Props> = (props) => {
             includeUser={filterIncludeUser}
             onIncludeUserChange={userOutlinedItemClickHandler}
           />
-          {messageNavigation === 'buttons' && <ChatNavigation containerId="messages" />}
+          {(messageNavigation === 'buttons' || messageNavigation === 'both') && (
+            <ChatNavigation containerId="messages" position={messageNavigation === 'both' ? 'left' : 'right'} />
+          )}
           <QuickPanelProvider>
             <Inputbar assistant={assistant} setActiveTopic={props.setActiveTopic} topic={props.activeTopic} />
             {isMultiSelectMode && <MultiSelectActionPopup topic={props.activeTopic} />}
