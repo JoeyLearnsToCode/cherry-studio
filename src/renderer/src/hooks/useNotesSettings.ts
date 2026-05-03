@@ -3,7 +3,7 @@ import {
   NotesSettings,
   selectNotesPath,
   selectNotesSettings,
-  setNotesPath,
+  setCustomNotesPath,
   updateNotesSettings
 } from '@renderer/store/note'
 
@@ -16,8 +16,9 @@ export const useNotesSettings = () => {
     dispatch(updateNotesSettings(newSettings))
   }
 
+  // 用户手动选择笔记目录
   const updateNotesPath = (path: string) => {
-    dispatch(setNotesPath(path))
+    dispatch(setCustomNotesPath(path))
   }
 
   return {

@@ -106,17 +106,16 @@ export type RootState = ReturnType<typeof rootReducer>
 export type AppDispatch = typeof store.dispatch
 
 export const persistor = persistStore(store, undefined, () => {
-  // Initialize notes path after rehydration if empty
+  // Rehydration 完成后，如果用户没有自定义笔记目录，则用主进程的最新路径覆盖
+  // 这确保了数据目录变更后笔记路径也能跟随更新
   const state = store.getState()
-  if (!state.note.notesPath) {
-    // Use setTimeout to ensure this runs after the store is fully initialized
+  if (!state.note.isCustomNotesPath) {
     setTimeout(async () => {
       try {
         const info = await window.api.getAppInfo()
         store.dispatch(setNotesPath(info.notesPath))
-        logger.info('Initialized notes path on startup:', info.notesPath)
       } catch (error) {
-        logger.error('Failed to initialize notes path on startup:', error as Error)
+        logger.error('Failed to update notes path on startup:', error as Error)
       }
     }, 0)
   }

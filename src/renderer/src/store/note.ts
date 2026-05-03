@@ -16,6 +16,7 @@ export interface NoteState {
   activeFilePath: string | undefined // 使用文件路径而不是nodeId
   settings: NotesSettings
   notesPath: string
+  isCustomNotesPath: boolean // 用户是否手动自定义了笔记目录
   sortType: NotesSortType
 }
 
@@ -30,6 +31,7 @@ export const initialState: NoteState = {
     showTabStatus: true
   },
   notesPath: '',
+  isCustomNotesPath: false,
   sortType: 'sort_a2z'
 }
 
@@ -48,6 +50,11 @@ const noteSlice = createSlice({
     },
     setNotesPath: (state, action: PayloadAction<string>) => {
       state.notesPath = action.payload
+      state.isCustomNotesPath = false
+    },
+    setCustomNotesPath: (state, action: PayloadAction<string>) => {
+      state.notesPath = action.payload
+      state.isCustomNotesPath = true
     },
     setSortType: (state, action: PayloadAction<NotesSortType>) => {
       state.sortType = action.payload
@@ -55,12 +62,13 @@ const noteSlice = createSlice({
   }
 })
 
-export const { setActiveNodeId, setActiveFilePath, updateNotesSettings, setNotesPath, setSortType } = noteSlice.actions
+export const { setActiveNodeId, setActiveFilePath, updateNotesSettings, setNotesPath, setCustomNotesPath, setSortType } = noteSlice.actions
 
 export const selectActiveNodeId = (state: RootState) => state.note.activeNodeId
 export const selectActiveFilePath = (state: RootState) => state.note.activeFilePath
 export const selectNotesSettings = (state: RootState) => state.note.settings
 export const selectNotesPath = (state: RootState) => state.note.notesPath
+export const selectIsCustomNotesPath = (state: RootState) => state.note.isCustomNotesPath
 export const selectSortType = (state: RootState) => state.note.sortType
 
 export default noteSlice.reducer

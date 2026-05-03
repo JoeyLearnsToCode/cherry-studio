@@ -2,6 +2,8 @@ import { loggerService } from '@logger'
 import Selector from '@renderer/components/Selector'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import { useNotesSettings } from '@renderer/hooks/useNotesSettings'
+import { useAppDispatch } from '@renderer/store'
+import { setNotesPath } from '@renderer/store/note'
 import { initWorkSpace } from '@renderer/services/NotesService'
 import { EditorView } from '@renderer/types'
 import { Button, Input, message, Switch } from 'antd'
@@ -82,7 +84,7 @@ const NotesSettings: FC = () => {
     try {
       const info = await window.api.getAppInfo()
       setTempPath(info.notesPath)
-      updateNotesPath(info.notesPath)
+      dispatch(setNotesPath(info.notesPath)) // 重置为默认，标记为非自定义
       initWorkSpace(info.notesPath, 'sort_a2z')
       window.message.success(t('notes.settings.data.reset_to_default'))
     } catch (error) {
