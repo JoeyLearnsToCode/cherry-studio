@@ -62,6 +62,7 @@ const DEFAULT_WATCHER_CONFIG: Required<FileWatcherConfig> = {
 
 class FileStorage {
   private storageDir = getFilesDir()
+  private outputDir = path.join(getFilesDir(), 'Output')
   private notesDir = getNotesDir()
   private tempDir = getTempDir()
   private watcher?: FSWatcher
@@ -78,6 +79,9 @@ class FileStorage {
     try {
       if (!fs.existsSync(this.storageDir)) {
         fs.mkdirSync(this.storageDir, { recursive: true })
+      }
+      if (!fs.existsSync(this.outputDir)) {
+        fs.mkdirSync(this.outputDir, { recursive: true })
       }
       if (!fs.existsSync(this.notesDir)) {
         fs.mkdirSync(this.storageDir, { recursive: true })
@@ -553,29 +557,27 @@ class FileStorage {
       const buffer = Buffer.from(base64String, 'base64')
       const uuid = uuidv4()
       const ext = '.png'
-      const destPath = path.join(this.storageDir, uuid + ext)
+      if (!fs.existsSync(this.outputDir)) {
+        fs.mkdirSync(this.outputDir, { recursive: true })
+      }
+      const destPath = path.join(this.outputDir, uuid + ext)
 
       logger.debug('Saving base64 image:', {
-        storageDir: this.storageDir,
+        outputDir: this.outputDir,
         destPath,
         bufferSize: buffer.length
       })
 
-      // 确保目录存在
-      if (!fs.existsSync(this.storageDir)) {
-        fs.mkdirSync(this.storageDir, { recursive: true })
-      }
-
       await fs.promises.writeFile(destPath, buffer)
 
       return {
-        id: uuid,
+        id: `Output/${uuid}`,
         origin_name: uuid + ext,
         name: uuid + ext,
         path: destPath,
         created_at: new Date().toISOString(),
         size: buffer.length,
-        ext: ext.slice(1),
+        ext: ext,
         type: getFileType(ext),
         count: 1
       }
@@ -613,7 +615,10 @@ class FileStorage {
       const contentType = response.headers.get('Content-Type')
       const ext = this.getExtensionFromMimeType(contentType)
       const fileName = this.generateLocalImageName(ext)
-      const destPath = path.join(this.storageDir, fileName)
+      if (!fs.existsSync(this.outputDir)) {
+        fs.mkdirSync(this.outputDir, { recursive: true })
+      }
+      const destPath = path.join(this.outputDir, fileName)
 
       const buffer = Buffer.from(await response.arrayBuffer())
       await fs.promises.writeFile(destPath, buffer)
@@ -622,7 +627,7 @@ class FileStorage {
       const fileType = getFileType(ext)
 
       return {
-        id: path.basename(fileName, ext),
+        id: `Output/${path.basename(fileName, ext)}`,
         origin_name: fileName,
         name: fileName,
         path: destPath,
@@ -659,11 +664,10 @@ class FileStorage {
 
       const buffer = Buffer.from(base64String, 'base64')
       const fileName = this.generateLocalImageName(ext)
-      const destPath = path.join(this.storageDir, fileName)
-
-      if (!fs.existsSync(this.storageDir)) {
-        fs.mkdirSync(this.storageDir, { recursive: true })
+      if (!fs.existsSync(this.outputDir)) {
+        fs.mkdirSync(this.outputDir, { recursive: true })
       }
+      const destPath = path.join(this.outputDir, fileName)
 
       await fs.promises.writeFile(destPath, buffer)
 
@@ -671,7 +675,7 @@ class FileStorage {
       const fileType = getFileType(ext)
 
       return {
-        id: path.basename(fileName, ext),
+        id: `Output/${path.basename(fileName, ext)}`,
         origin_name: fileName,
         name: fileName,
         path: destPath,

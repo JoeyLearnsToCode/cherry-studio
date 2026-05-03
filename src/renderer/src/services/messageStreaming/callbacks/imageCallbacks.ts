@@ -1,5 +1,4 @@
 import { loggerService } from '@logger'
-import db from '@renderer/databases'
 import { FileMetadata } from '@renderer/types'
 import { ImageMessageBlock, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import { createImageBlock } from '@renderer/utils/messageUtils/create'
@@ -61,43 +60,49 @@ export const createImageCallbacks = (deps: ImageCallbacksDependencies) => {
       }
     },
 
-    onImageGenerated: (imageData: any) => {
+    onImageGenerated: async (imageData: any) => {
       if (imageBlockId) {
+        const blockId = imageBlockId
+        imageBlockId = null // 立即清空，防止异常导致泄漏
+
         if (!imageData) {
           const changes: Partial<ImageMessageBlock> = {
             status: MessageBlockStatus.SUCCESS
           }
-          blockManager.smartBlockUpdate(imageBlockId, changes, MessageBlockType.IMAGE)
+          blockManager.smartBlockUpdate(blockId, changes, MessageBlockType.IMAGE)
         } else {
           const imageUrl = imageData.images?.[0] || 'placeholder_image_url'
 
-          // Immediately mark as SUCCESS with remote URLs (fallback)
-          const changes: Partial<ImageMessageBlock> = {
-            url: imageUrl,
-            metadata: { generateImageResponse: imageData },
-            status: MessageBlockStatus.SUCCESS
-          }
-          blockManager.smartBlockUpdate(imageBlockId, changes, MessageBlockType.IMAGE, true)
+          // 先设 SUCCESS，保证会话不会卡在"进行中"状态
+          blockManager.smartBlockUpdate(
+            blockId,
+            {
+              url: imageUrl,
+              metadata: { generateImageResponse: imageData },
+              status: MessageBlockStatus.SUCCESS
+            } as Partial<ImageMessageBlock>,
+            MessageBlockType.IMAGE,
+            true
+          )
 
-          // Fire-and-forget: download images to local in background
-          const blockId = imageBlockId
+          // 再 await 下载到本地，完成后更新 metadata
+          // 组件 useEffect 通过 seenStreaming 跳过流式期间，不会重复下载
           const images: string[] = imageData.images || []
-          Promise.all(images.map(downloadImageToLocal)).then((localFiles) => {
+          try {
+            const localFiles = await Promise.all(images.map(downloadImageToLocal))
             const hasLocal = localFiles.some((f) => f !== null)
             if (hasLocal) {
-              const updatedMetadata = { generateImageResponse: imageData, localFiles }
-              const updateChanges: Partial<ImageMessageBlock> = {
-                metadata: updatedMetadata
-              }
-              blockManager.smartBlockUpdate(blockId, updateChanges, MessageBlockType.IMAGE, true)
-              // 持久化到 Dexie，确保重启后不需要重新下载
-              db.message_blocks.update(blockId, { metadata: updatedMetadata } as any).catch((err) => {
-                logger.error('Failed to persist image localFiles to DB:', err as Error)
-              })
+              blockManager.smartBlockUpdate(
+                blockId,
+                { metadata: { generateImageResponse: imageData, localFiles } } as Partial<ImageMessageBlock>,
+                MessageBlockType.IMAGE,
+                true
+              )
             }
-          })
+          } catch {
+            // 下载失败，保留远程 URL，下次打开会话时组件兜底处理
+          }
         }
-        imageBlockId = null
       } else {
         logger.error('[onImageGenerated] Last block was not an Image block or ID is missing.')
       }

@@ -103,16 +103,16 @@ function doLocalizeImages(blockId: string, store: ReturnType<typeof useAppStore>
 const ImageBlock: React.FC<Props> = ({ block, isSingle = false }) => {
   const store = useAppStore()
   const localizeAttempted = useRef(false)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // 追踪是否在本次组件生命周期内经历过流式渲染
   // 用于区分"流式响应期间"和"打开会话时加载已有数据"两种场景
   const seenStreaming = useRef(false)
 
-  // 图片本地化兜底：打开会话时检查是否有未本地化的图片
-  // 主要逻辑在 imageCallbacks.onImageGenerated 中执行，这里仅作兜底
+  // 图片本地化兜底：仅在打开会话时执行（seenStreaming === false）
+  // 流式响应期间由 imageCallbacks.onImageGenerated 独占处理，避免重复下载
   useEffect(() => {
     if (localizeAttempted.current) return
     if (block.status !== MessageBlockStatus.SUCCESS) return
+    if (seenStreaming.current) return
 
     const { metadata } = block
     const generateImages = metadata?.generateImageResponse?.images
@@ -129,23 +129,7 @@ const ImageBlock: React.FC<Props> = ({ block, isSingle = false }) => {
     if (missingIndices.length === 0) return
 
     localizeAttempted.current = true
-
-    if (seenStreaming.current) {
-      // 流式响应期间：延迟执行，给 imageCallbacks 的后台下载留时间
-      timerRef.current = setTimeout(() => {
-        doLocalizeImages(block.id, store)
-      }, 2000)
-    } else {
-      // 打开会话加载：直接执行，无需等待
-      doLocalizeImages(block.id, store)
-    }
-
-    return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current)
-        timerRef.current = null
-      }
-    }
+    doLocalizeImages(block.id, store)
   }, [block.id, block.metadata, block.status, store])
 
   // 追踪流式状态变化

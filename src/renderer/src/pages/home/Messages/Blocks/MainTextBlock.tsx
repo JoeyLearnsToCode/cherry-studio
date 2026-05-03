@@ -26,15 +26,17 @@ const MainTextBlock: React.FC<Props> = ({ block, citationBlockId, role, mentions
   const { renderInputMessageAsMarkdown } = useSettings()
   const store = useAppStore()
   const localizeAttempted = useRef(false)
+  const seenStreaming = useRef(false)
 
   const rawCitations = useSelector((state: any) => selectFormattedCitationsByBlockId(state, citationBlockId))
 
-  // 图片本地化兜底：打开会话时检查是否有未本地化的图片
-  // 主要逻辑在 textCallbacks.onTextComplete 中执行，这里仅作兜底
+  // 图片本地化兜底：仅在打开会话时执行（seenStreaming === false）
+  // 流式响应期间由 textCallbacks.onTextComplete 独占处理，避免重复下载
   useEffect(() => {
     if (localizeAttempted.current) return
     if (block.status !== MessageBlockStatus.SUCCESS) return
     if (!hasLocalizableImages(block.content)) return
+    if (seenStreaming.current) return
 
     localizeAttempted.current = true
     const originalContent = block.content
@@ -45,6 +47,10 @@ const MainTextBlock: React.FC<Props> = ({ block, citationBlockId, role, mentions
       }
     })
   }, [block.id, block.content, block.status, store])
+
+  if (block.status === MessageBlockStatus.STREAMING) {
+    seenStreaming.current = true
+  }
 
   // 创建引用处理函数，传递给 Markdown 组件在流式渲染中使用
   const processContent = useCallback(

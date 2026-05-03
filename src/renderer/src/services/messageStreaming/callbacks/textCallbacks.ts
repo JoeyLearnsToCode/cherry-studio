@@ -1,5 +1,4 @@
 import { loggerService } from '@logger'
-import db from '@renderer/databases'
 import { WebSearchSource } from '@renderer/types'
 import { CitationMessageBlock, MessageBlock, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import { createMainTextBlock } from '@renderer/utils/messageUtils/create'
@@ -58,17 +57,22 @@ export const createTextCallbacks = (deps: TextCallbacksDependencies) => {
 
     onTextComplete: async (finalText: string) => {
       if (mainTextBlockId) {
-        const changes = {
-          content: finalText,
-          status: MessageBlockStatus.SUCCESS
-        }
-        blockManager.smartBlockUpdate(mainTextBlockId, changes, MessageBlockType.MAIN_TEXT, true)
+        const blockId = mainTextBlockId
+        mainTextBlockId = null // 立即清空，防止异常导致泄漏
 
-        // 响应结束后立即本地化图片（fire-and-forget）
-        // 组件 useEffect 作为兜底，双重保险
+        // 先设 SUCCESS，保证会话不会卡在"进行中"状态
+        blockManager.smartBlockUpdate(
+          blockId,
+          { content: finalText, status: MessageBlockStatus.SUCCESS },
+          MessageBlockType.MAIN_TEXT,
+          true
+        )
+
+        // 再 await 本地化图片，完成后更新 content
+        // 组件 useEffect 通过 seenStreaming 跳过流式期间，不会重复下载
         if (hasLocalizableImages(finalText)) {
-          const blockId = mainTextBlockId
-          localizeMarkdownImages(finalText).then(({ content: localizedContent }) => {
+          try {
+            const { content: localizedContent } = await localizeMarkdownImages(finalText)
             if (localizedContent !== finalText) {
               blockManager.smartBlockUpdate(
                 blockId,
@@ -76,12 +80,11 @@ export const createTextCallbacks = (deps: TextCallbacksDependencies) => {
                 MessageBlockType.MAIN_TEXT,
                 true
               )
-              db.message_blocks.update(blockId, { content: localizedContent } as any).catch(() => {})
             }
-          })
+          } catch {
+            // 本地化失败，保留远程 URL，下次打开会话时组件兜底处理
+          }
         }
-
-        mainTextBlockId = null
       } else {
         logger.warn(
           `[onTextComplete] Received text.complete but last block was not MAIN_TEXT (was ${blockManager.lastBlockType}) or lastBlockId is null.`
