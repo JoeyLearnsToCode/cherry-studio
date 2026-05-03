@@ -141,6 +141,13 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
       const finalStateOnComplete = getState()
       const finalAssistantMsg = finalStateOnComplete.messages.entities[assistantMsgId]
 
+      // 如果消息已被 onError 设为 ERROR/PAUSED 状态，不再覆盖为 SUCCESS
+      // 避免流消费错误后 finally 中的 BLOCK_COMPLETE 覆盖错误状态
+      if (finalAssistantMsg?.status === AssistantMessageStatus.ERROR || finalAssistantMsg?.status === AssistantMessageStatus.PAUSED) {
+        logger.debug(`onComplete skipped: message already in ${finalAssistantMsg.status} state`)
+        return
+      }
+
       if (status === 'success' && finalAssistantMsg) {
         const userMsgId = finalAssistantMsg.askId
         const orderedMsgs = selectMessagesForTopic(finalStateOnComplete, topicId)

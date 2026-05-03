@@ -61,6 +61,7 @@ const FinalChunkConsumerMiddleware: CompletionsMiddleware =
       if (resultFromUpstream && resultFromUpstream instanceof ReadableStream) {
         const reader = resultFromUpstream.getReader()
 
+        let streamErrored = false
         try {
           while (true) {
             const { done, value: chunk } = await reader.read()
@@ -86,8 +87,9 @@ const FinalChunkConsumerMiddleware: CompletionsMiddleware =
             }
           }
         } catch (error: any) {
+          streamErrored = true
           logger.error(`Error consuming stream:`, error as Error)
-          // FIXME: 临时解决方案。该中间件的异常无法被 ErrorHandlerMiddleware捕获。
+          // 流消费异常无法被 ErrorHandlerMiddleware 捕获，需要手动转发
           if (params.onError) {
             params.onError(error)
           }
@@ -95,7 +97,9 @@ const FinalChunkConsumerMiddleware: CompletionsMiddleware =
             throw error
           }
         } finally {
-          if (params.onChunk && !isRecursiveCall) {
+          // 仅在流正常结束时发出 BLOCK_COMPLETE，出错时跳过
+          // 出错时由 onError 回调负责终止消息状态
+          if (!streamErrored && params.onChunk && !isRecursiveCall) {
             params.onChunk({
               type: ChunkType.BLOCK_COMPLETE,
               response: {

@@ -423,14 +423,14 @@ export async function fetchChatCompletion({
   messages,
   assistant,
   onChunkReceived,
+  onError,
   keepLastAssistantMessage = false
 }: {
   messages: Message[]
   assistant: Assistant
   onChunkReceived: (chunk: Chunk) => void
+  onError?: (error: Error) => void
   keepLastAssistantMessage?: boolean
-  // TODO
-  // onChunkStatus: (status: 'searching' | 'processing' | 'success' | 'error') => void
 }) {
   logger.debug('fetchChatCompletion', messages, assistant)
 
@@ -495,6 +495,7 @@ export async function fetchChatCompletion({
     messages: _messages,
     assistant,
     onChunk: onChunkReceived,
+    onError,
     mcpTools: mcpTools,
     maxTokens,
     streamOutput: assistant.settings?.streamOutput || false,
