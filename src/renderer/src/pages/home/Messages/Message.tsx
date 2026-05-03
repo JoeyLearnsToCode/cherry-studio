@@ -12,7 +12,7 @@ import { getMessageModelId } from '@renderer/services/MessagesService'
 import { getModelUniqId } from '@renderer/services/ModelService'
 import { estimateMessageUsage } from '@renderer/services/TokenService'
 import { Assistant, Topic } from '@renderer/types'
-import type { Message, MessageBlock } from '@renderer/types/newMessage'
+import { AssistantMessageStatus, type Message, type MessageBlock } from '@renderer/types/newMessage'
 import { classNames } from '@renderer/utils'
 import { Divider } from 'antd'
 import React, { Dispatch, FC, memo, SetStateAction, useCallback, useEffect, useRef } from 'react'
@@ -89,7 +89,11 @@ const MessageItem: FC<Props> = ({
       try {
         await editMessageBlocks(message.id, blocks)
         const usage = await estimateMessageUsage(message)
-        editMessage(message.id, { usage: usage })
+        const updates: Partial<Message> = { usage }
+        if (message.status === 'error' || message.status === 'paused') {
+          updates.status = AssistantMessageStatus.SUCCESS
+        }
+        editMessage(message.id, updates)
         stopEditing()
       } catch (error) {
         logger.error('Failed to save message blocks:', error as Error)

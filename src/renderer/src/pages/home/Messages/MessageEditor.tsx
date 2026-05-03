@@ -13,8 +13,8 @@ import { FileType, FileTypes } from '@renderer/types'
 import { Message, MessageBlock, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import { classNames } from '@renderer/utils'
 import { getFilesFromDropEvent } from '@renderer/utils/input'
-import { createFileBlock, createImageBlock } from '@renderer/utils/messageUtils/create'
-import { findAllBlocks } from '@renderer/utils/messageUtils/find'
+import { createFileBlock, createImageBlock, createMainTextBlock } from '@renderer/utils/messageUtils/create'
+import { findAllBlocks, findMainTextBlocks } from '@renderer/utils/messageUtils/find'
 import { documentExts, imageExts, textExts } from '@shared/config/constant'
 import { Space, Tooltip } from 'antd'
 import TextArea, { TextAreaRef } from 'antd/es/input/TextArea'
@@ -39,7 +39,12 @@ const logger = loggerService.withContext('MessageBlockEditor')
 
 const MessageBlockEditor: FC<Props> = ({ message, topicId, onSave, onResend, onCancel }) => {
   const allBlocks = findAllBlocks(message)
-  const [editedBlocks, setEditedBlocks] = useState<MessageBlock[]>(allBlocks)
+  const [editedBlocks, setEditedBlocks] = useState<MessageBlock[]>(() => {
+    if (findMainTextBlocks(message).length === 0) {
+      return [...allBlocks, createMainTextBlock(message.id, '', { status: MessageBlockStatus.SUCCESS })]
+    }
+    return allBlocks
+  })
   const [files, setFiles] = useState<FileType[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [isFileDragging, setIsFileDragging] = useState(false)

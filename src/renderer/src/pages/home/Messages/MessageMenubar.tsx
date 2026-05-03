@@ -208,8 +208,9 @@ const MessageMenubar: FC<Props> = (props) => {
   }, [message])
 
   const isEditable = useMemo(() => {
-    return findMainTextBlocks(message).length > 0 // 使用 MCP Server 后会有大于一段 MatinTextBlock
-  }, [message])
+    if (isAssistantMessage) return true // 助手消息始终可编辑，无 MainTextBlock 时编辑会追加
+    return findMainTextBlocks(message).length > 0
+  }, [message, isAssistantMessage])
 
   const dropdownItems = useMemo(
     () => [
