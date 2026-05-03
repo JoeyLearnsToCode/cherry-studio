@@ -1,3 +1,4 @@
+import FileManager from '@renderer/services/FileManager'
 import { FileMetadata, FileType } from '@renderer/types'
 import { filterSupportedFiles } from '@renderer/utils/file'
 import { Dropdown, Tooltip } from 'antd'
@@ -80,7 +81,14 @@ const AttachmentButton: FC<Props> = ({
 
   const handleSelectUploadedFiles = useCallback(
     (selectedFiles: FileMetadata[]) => {
-      setFiles([...files, ...selectedFiles])
+      // Rebuild path using FileManager.getFilePath() since db.files may have stale paths,
+      // and mark as _alreadyUploaded to skip re-uploading
+      const filesWithFixedPath: FileType[] = selectedFiles.map((f) => ({
+        ...f,
+        path: FileManager.getFilePath(f),
+        _alreadyUploaded: true
+      }))
+      setFiles([...files, ...filesWithFixedPath])
       setShowUploadedFilesModal(false)
     },
     [files, setFiles]

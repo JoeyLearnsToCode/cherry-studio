@@ -90,7 +90,10 @@ export interface FileMetadata {
   tokens?: number
 }
 
-export interface FileType extends FileMetadata {}
+export interface FileType extends FileMetadata {
+  /** Mark files selected from "已上传文件" that don't need re-uploading */
+  _alreadyUploaded?: boolean
+}
 
 export enum FileTypes {
   IMAGE = 'image',

@@ -246,7 +246,11 @@ const Inputbar: FC<Props> = ({ assistant: _assistant, setActiveTopic, topic }) =
 
     try {
       // Dispatch the sendMessage action with all options
-      const uploadedFiles = await FileManager.uploadFiles(files)
+      // Separate already-uploaded files (from "选择已上传文件") from local files
+      const alreadyUploadedFiles = files.filter((f) => f._alreadyUploaded)
+      const localFiles = files.filter((f) => !f._alreadyUploaded)
+      const uploadedLocalFiles = localFiles.length > 0 ? await FileManager.uploadFiles(localFiles) : []
+      const uploadedFiles = [...alreadyUploadedFiles, ...uploadedLocalFiles]
 
       const baseUserMessage: MessageInputBaseParams = { assistant, topic, content: text }
       logger.info('baseUserMessage', baseUserMessage)

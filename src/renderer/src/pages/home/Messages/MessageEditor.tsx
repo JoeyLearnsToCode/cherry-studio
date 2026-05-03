@@ -9,7 +9,7 @@ import FileManager from '@renderer/services/FileManager'
 import PasteService from '@renderer/services/PasteService'
 import { useAppSelector } from '@renderer/store'
 import { selectMessagesForTopic } from '@renderer/store/newMessage'
-import { FileMetadata, FileTypes } from '@renderer/types'
+import { FileType, FileTypes } from '@renderer/types'
 import { Message, MessageBlock, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import { classNames } from '@renderer/utils'
 import { getFilesFromDropEvent } from '@renderer/utils/input'
@@ -40,7 +40,7 @@ const logger = loggerService.withContext('MessageBlockEditor')
 const MessageBlockEditor: FC<Props> = ({ message, topicId, onSave, onResend, onCancel }) => {
   const allBlocks = findAllBlocks(message)
   const [editedBlocks, setEditedBlocks] = useState<MessageBlock[]>(allBlocks)
-  const [files, setFiles] = useState<FileMetadata[]>([])
+  const [files, setFiles] = useState<FileType[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [isFileDragging, setIsFileDragging] = useState(false)
   const { assistant } = useAssistant(message.assistantId)
@@ -195,8 +195,12 @@ const MessageBlockEditor: FC<Props> = ({ message, topicId, onSave, onResend, onC
   const processEditedBlocks = async () => {
     const updatedBlocks = [...editedBlocks]
     if (files && files.length) {
-      const uploadedFiles = await FileManager.uploadFiles(files)
-      uploadedFiles.forEach((file) => {
+      // Already-uploaded files (from "选择已上传文件") don't need re-uploading
+      const alreadyUploadedFiles = files.filter((f) => f._alreadyUploaded)
+      const localFiles = files.filter((f) => !f._alreadyUploaded)
+      const uploadedLocalFiles = localFiles.length > 0 ? await FileManager.uploadFiles(localFiles) : []
+      const allFiles = [...alreadyUploadedFiles, ...uploadedLocalFiles]
+      allFiles.forEach((file) => {
         if (file.type === FileTypes.IMAGE) {
           const imgBlock = createImageBlock(message.id, { file, status: MessageBlockStatus.SUCCESS })
           updatedBlocks.push(imgBlock)
@@ -307,13 +311,13 @@ const MessageBlockEditor: FC<Props> = ({ message, topicId, onSave, onResend, onC
                   )
               )}
 
-            {files.map((file) => (
+            {files.map((file, index) => (
               <CustomTag
-                key={file.id}
+                key={`${file.id}-${index}`}
                 icon={getFileIcon(file.ext)}
                 color="#37a5aa"
                 closable
-                onClose={() => setFiles((prevFiles) => prevFiles.filter((f) => f.id !== file.id))}>
+                onClose={() => setFiles(files.filter((_, i) => i !== index))}>
                 <FileNameRender file={file} />
               </CustomTag>
             ))}

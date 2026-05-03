@@ -23,6 +23,7 @@ const isImageExt = (ext: string) => IMAGE_EXTS.includes(ext.toLowerCase())
 const SelectUploadedFilesModal: FC<Props> = ({ open, onClose, onConfirm, extensions, couldAddImageFile }) => {
   const { t } = useTranslation()
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [previewingId, setPreviewingId] = useState<string | null>(null)
 
   const allFiles = useLiveQuery<FileMetadata[]>(() => db.files.orderBy('created_at').reverse().toArray(), [])
 
@@ -89,32 +90,48 @@ const SelectUploadedFilesModal: FC<Props> = ({ open, onClose, onConfirm, extensi
           <>
             {imageFiles.length > 0 && (
               <Section>
-                <Image.PreviewGroup>
-                  <Row gutter={[12, 12]}>
-                    {imageFiles.map((file) => (
-                      <Col key={file.id} xs={8} sm={6} md={4}>
-                        <ImageCard $selected={selectedIds.has(file.id)} onClick={() => toggleSelect(file.id)}>
-                          <ImageWrapper>
-                            <Spin size="small" />
-                            <StyledImage
-                              src={FileManager.getFileUrl(file)}
-                              style={{ height: '100%', objectFit: 'cover', cursor: 'pointer' }}
-                              preview={{ mask: false }}
-                              onLoad={(e) => {
-                                const img = e.target as HTMLImageElement
-                                img.parentElement?.classList.add('loaded')
-                              }}
-                            />
-                          </ImageWrapper>
-                          <ImageLabel>{FileManager.formatFileName(file)}</ImageLabel>
-                          <CheckboxOverlay>
-                            <Checkbox checked={selectedIds.has(file.id)} />
-                          </CheckboxOverlay>
-                        </ImageCard>
-                      </Col>
-                    ))}
-                  </Row>
-                </Image.PreviewGroup>
+                <Row gutter={[12, 12]}>
+                  {imageFiles.map((file) => (
+                    <Col key={file.id} xs={8} sm={6} md={4}>
+                      <ImageCard
+                        $selected={selectedIds.has(file.id)}
+                        onClick={(e) => {
+                          if (e.ctrlKey || e.metaKey) {
+                            toggleSelect(file.id)
+                          } else {
+                            setPreviewingId(file.id)
+                          }
+                        }}>
+                        <ImageWrapper>
+                          <Spin size="small" />
+                          <StyledImage
+                            src={FileManager.getFileUrl(file)}
+                            style={{ height: '100%', objectFit: 'cover', cursor: 'pointer' }}
+                            preview={{
+                              visible: previewingId === file.id,
+                              mask: false,
+                              onVisibleChange: (visible: boolean) => {
+                                if (!visible) setPreviewingId(null)
+                              }
+                            }}
+                            onLoad={(e) => {
+                              const img = e.target as HTMLImageElement
+                              img.parentElement?.classList.add('loaded')
+                            }}
+                          />
+                        </ImageWrapper>
+                        <ImageLabel>{FileManager.formatFileName(file)}</ImageLabel>
+                        <CheckboxOverlay
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            toggleSelect(file.id)
+                          }}>
+                          <Checkbox checked={selectedIds.has(file.id)} />
+                        </CheckboxOverlay>
+                      </ImageCard>
+                    </Col>
+                  ))}
+                </Row>
               </Section>
             )}
             {otherFiles.length > 0 && (

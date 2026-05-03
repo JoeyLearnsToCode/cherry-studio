@@ -137,15 +137,19 @@ const AttachmentPreview: FC<Props> = ({ files, setFiles }) => {
     return null
   }
 
+  const removeFileAtIndex = (index: number) => {
+    setFiles(files.filter((_, i) => i !== index))
+  }
+
   return (
     <ContentContainer>
-      {files.map((file) => (
+      {files.map((file, index) => (
         <CustomTag
-          key={file.id}
+          key={`${file.id}-${index}`}
           icon={getFileIcon(file.ext)}
           color="#37a5aa"
           closable
-          onClose={() => setFiles(files.filter((f) => f.id !== file.id))}>
+          onClose={() => removeFileAtIndex(index)}>
           <FileNameRender file={file} />
         </CustomTag>
       ))}
