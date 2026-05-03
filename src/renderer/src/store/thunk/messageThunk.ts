@@ -1208,20 +1208,15 @@ export const cloneMessagesToNewTopicThunk =
         const newMsgId = uuid()
         originalToNewMsgIdMap.set(oldMessage.id, newMsgId) // Store mapping for all cloned messages
 
-        let newAskId: string | undefined = undefined // Initialize newAskId
+        let newAskId: string | undefined = undefined
         if (oldMessage.role === 'assistant' && oldMessage.askId) {
-          // If it's an assistant message with an askId, find the NEW ID of the user message it references
           const mappedNewAskId = originalToNewMsgIdMap.get(oldMessage.askId)
           if (mappedNewAskId) {
-            newAskId = mappedNewAskId // Use the new ID
+            newAskId = mappedNewAskId
           } else {
-            // This happens if the user message corresponding to askId was *before* the branch point index
-            // and thus wasn't included in messagesToClone or the map.
-            // In this case, the link is broken in the new topic.
-            logger.warn(
-              `[cloneMessages] Could not find new ID mapping for original askId ${oldMessage.askId} (likely outside branch). Setting askId to undefined for new assistant message ${newMsgId}.`
-            )
-            // newAskId remains undefined
+            // Preserve the original askId so that grouped messages stay grouped.
+            // askId serves as a grouping key and doesn't need to reference a real message.
+            newAskId = oldMessage.askId
           }
         }
 

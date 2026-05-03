@@ -19,6 +19,7 @@ import MessageItem from './Message'
 import MessageGroupMenuBar from './MessageGroupMenuBar'
 
 const logger = loggerService.withContext('MessageGroup')
+
 interface Props {
   messages: (Message & { index: number })[]
   topic: Topic
@@ -262,7 +263,7 @@ const MessageGroup = ({ messages, topic, registerMessageElement }: Props) => {
             }
             trigger={gridPopoverTrigger}
             styles={{
-              root: { maxWidth: '60vw', overflowY: 'auto', zIndex: 1000 },
+              root: { maxWidth: '40vw', overflowY: 'auto', zIndex: 1000 },
               body: { padding: 2 }
             }}>
             {messageContent}
@@ -384,8 +385,9 @@ interface MessageWrapperProps {
 
 const MessageWrapper = styled.div<MessageWrapperProps>`
   &.horizontal {
+    max-height: 80vh;
+    overflow: hidden;
     padding: 1px;
-    overflow-y: auto;
     .message {
       height: 100%;
       border: 0.5px solid var(--color-border);
@@ -393,8 +395,8 @@ const MessageWrapper = styled.div<MessageWrapperProps>`
     }
     .message-content-container {
       flex: 1;
+      min-height: 0;
       padding-left: 0;
-      max-height: calc(100vh - 350px);
       overflow-y: auto !important;
       margin-right: -10px;
     }
@@ -403,10 +405,22 @@ const MessageWrapper = styled.div<MessageWrapperProps>`
       margin-top: 2px;
       margin-bottom: 2px;
     }
+    /* 图片以自然比例渲染，宽度撑满卡片 */
+    .ant-image {
+      display: block !important;
+      width: 100% !important;
+    }
+    .ant-image img {
+      width: 100% !important;
+      height: auto !important;
+      max-width: 100% !important;
+      max-height: none !important;
+      object-fit: contain !important;
+    }
   }
   &.grid {
-    height: 300px;
-    overflow-y: hidden;
+    max-height: 80vh;
+    overflow: hidden;
     border: 0.5px solid var(--color-border);
     border-radius: 10px;
     cursor: pointer;
@@ -414,9 +428,10 @@ const MessageWrapper = styled.div<MessageWrapperProps>`
       height: 100%;
     }
     .message-content-container {
+      flex: 1;
+      min-height: 0;
       overflow: hidden;
       padding-left: 0;
-      flex: 1;
       pointer-events: none;
     }
     .MessageFooter {
@@ -424,11 +439,23 @@ const MessageWrapper = styled.div<MessageWrapperProps>`
       margin-top: 2px;
       margin-bottom: 2px;
     }
+    /* 图片以自然比例渲染，宽度撑满卡片 */
+    .ant-image {
+      display: block !important;
+      width: 100% !important;
+    }
+    .ant-image img {
+      width: 100% !important;
+      height: auto !important;
+      max-width: 100% !important;
+      max-height: none !important;
+      object-fit: contain !important;
+    }
   }
   &.in-popover {
     height: auto;
     border: none;
-    max-height: 50vh;
+    max-height: 80vh;
     overflow-y: auto;
     cursor: default;
     .message-content-container {
