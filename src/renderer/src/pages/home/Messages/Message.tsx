@@ -14,7 +14,7 @@ import { estimateMessageUsage } from '@renderer/services/TokenService'
 import { Assistant, Topic } from '@renderer/types'
 import { AssistantMessageStatus, type Message, type MessageBlock } from '@renderer/types/newMessage'
 import { classNames } from '@renderer/utils'
-import { Divider } from 'antd'
+import { Divider, Dropdown } from 'antd'
 import React, { Dispatch, FC, memo, SetStateAction, useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -25,6 +25,7 @@ import MessageErrorBoundary from './MessageErrorBoundary'
 import MessageHeader from './MessageHeader'
 import MessageMenubar from './MessageMenubar'
 import MessageOutline from './MessageOutline'
+import { useMessageMenuItems } from './useMessageMenuItems'
 
 interface Props {
   message: Message
@@ -74,6 +75,20 @@ const MessageItem: FC<Props> = ({
   const { editingMessageId, startEditing, stopEditing } = useMessageEditing()
   const { setTimeoutTimer } = useTimer()
   const isEditing = editingMessageId === message.id
+  const [contextMenuOpen, setContextMenuOpen] = React.useState(false)
+
+  const { contextMenuItems, hasSelection } = useMessageMenuItems({
+    message,
+    assistant: assistant as Assistant,
+    topic,
+    model,
+    index,
+    isGrouped,
+    isLastMessage: index === 0 || !!isGrouped,
+    isAssistantMessage: message.role === 'assistant',
+    messageContainerRef: messageContainerRef as React.RefObject<HTMLDivElement>,
+    onUpdateUseful
+  })
 
   useEffect(() => {
     if (isEditing && messageContainerRef.current) {
@@ -104,8 +119,9 @@ const MessageItem: FC<Props> = ({
 
   const handleEditResend = useCallback(
     async (blocks: MessageBlock[]) => {
+      if (!assistant) return
       try {
-        await resendUserMessageWithEdit(message, blocks, assistant)
+        await resendUserMessageWithEdit(message, blocks, assistant as Assistant)
         stopEditing()
       } catch (error) {
         logger.error('Failed to resend message:', error as Error)
@@ -178,69 +194,94 @@ const MessageItem: FC<Props> = ({
     )
   }
 
+  const content = (
+    <MessageContainer
+      key={message.id}
+      className={classNames({
+        message: true,
+        'message-assistant': isAssistantMessage,
+        'message-user': !isAssistantMessage
+      })}
+      ref={messageContainerRef}>
+      <MessageHeader
+        message={message}
+        assistant={assistant as Assistant}
+        model={model}
+        key={getModelUniqId(model)}
+        topic={topic}
+        isGroupContextMessage={isGroupContextMessage}
+      />
+      {isEditing && (
+        <MessageEditor
+          message={message}
+          topicId={topic.id}
+          onSave={handleEditSave}
+          onResend={handleEditResend}
+          onCancel={handleEditCancel}
+        />
+      )}
+      {!isEditing && (
+        <>
+          {!isMultiSelectMode && message.role === 'assistant' && showMessageOutline && (
+            <MessageOutline message={message} />
+          )}
+          <MessageContentContainer
+            className="message-content-container"
+            style={{
+              fontFamily: messageFont === 'serif' ? 'var(--font-family-serif)' : 'var(--font-family)',
+              fontSize,
+              overflowY: 'visible'
+            }}>
+            <MessageErrorBoundary>
+              <MessageContent message={message} />
+            </MessageErrorBoundary>
+          </MessageContentContainer>
+          {showMenubar && (
+            <MessageFooter
+              className="MessageFooter"
+              $isLastMessage={isLastMessage}
+              $messageStyle={messageStyle}
+              onClick={(e) => e.stopPropagation()}>
+              <MessageMenubar
+                message={message}
+                assistant={assistant as Assistant}
+                model={model}
+                index={index}
+                topic={topic}
+                isLastMessage={isLastMessage}
+                isAssistantMessage={isAssistantMessage}
+                isGrouped={isGrouped}
+                messageContainerRef={messageContainerRef as React.RefObject<HTMLDivElement>}
+                setModel={setModel}
+                onUpdateUseful={onUpdateUseful}
+              />
+            </MessageFooter>
+          )}
+        </>
+      )}
+    </MessageContainer>
+  )
+
   return (
     <WrapperContainer isMultiSelectMode={isMultiSelectMode}>
-      <MessageContainer
-        key={message.id}
-        className={classNames({
-          message: true,
-          'message-assistant': isAssistantMessage,
-          'message-user': !isAssistantMessage
-        })}
-        ref={messageContainerRef}>
-        <MessageHeader
-          message={message}
-          assistant={assistant}
-          model={model}
-          key={getModelUniqId(model)}
-          topic={topic}
-          isGroupContextMessage={isGroupContextMessage}
-        />
-        {isEditing && (
-          <MessageEditor
-            message={message}
-            topicId={topic.id}
-            onSave={handleEditSave}
-            onResend={handleEditResend}
-            onCancel={handleEditCancel}
-          />
-        )}
-        {!isEditing && (
-          <>
-            {!isMultiSelectMode && message.role === 'assistant' && showMessageOutline && (
-              <MessageOutline message={message} />
-            )}
-            <MessageContentContainer
-              className="message-content-container"
-              style={{
-                fontFamily: messageFont === 'serif' ? 'var(--font-family-serif)' : 'var(--font-family)',
-                fontSize,
-                overflowY: 'visible'
-              }}>
-              <MessageErrorBoundary>
-                <MessageContent message={message} />
-              </MessageErrorBoundary>
-            </MessageContentContainer>
-            {showMenubar && (
-              <MessageFooter className="MessageFooter" $isLastMessage={isLastMessage} $messageStyle={messageStyle} onClick={(e) => e.stopPropagation()}>
-                <MessageMenubar
-                  message={message}
-                  assistant={assistant}
-                  model={model}
-                  index={index}
-                  topic={topic}
-                  isLastMessage={isLastMessage}
-                  isAssistantMessage={isAssistantMessage}
-                  isGrouped={isGrouped}
-                  messageContainerRef={messageContainerRef as React.RefObject<HTMLDivElement>}
-                  setModel={setModel}
-                  onUpdateUseful={onUpdateUseful}
-                />
-              </MessageFooter>
-            )}
-          </>
-        )}
-      </MessageContainer>
+      {!isMultiSelectMode && !isEditing ? (
+        <Dropdown
+          menu={{ items: contextMenuItems }}
+          trigger={['contextMenu']}
+          open={contextMenuOpen}
+          onOpenChange={(open) => {
+            if (open && hasSelection()) {
+              // 有选中文本时，不打开消息右键菜单
+              setContextMenuOpen(false)
+              return
+            }
+            setContextMenuOpen(open)
+          }}>
+          {content}
+        </Dropdown>
+      ) : (
+        content
+      )}
     </WrapperContainer>
   )
 }
