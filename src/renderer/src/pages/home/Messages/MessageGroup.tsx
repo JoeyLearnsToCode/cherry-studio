@@ -438,6 +438,15 @@ const MessageWrapper = styled.div<MessageWrapperProps>`
       margin-left: 0;
       margin-top: 2px;
       margin-bottom: 2px;
+      .menubar {
+        flex-shrink: 0;
+      }
+      .message-tokens {
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
     }
     /* 图片以自然比例渲染，宽度撑满卡片 */
     .ant-image {

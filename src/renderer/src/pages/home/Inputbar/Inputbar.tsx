@@ -250,6 +250,10 @@ const Inputbar: FC<Props> = ({ assistant: _assistant, setActiveTopic, topic }) =
       const alreadyUploadedFiles = files.filter((f) => f._alreadyUploaded)
       const localFiles = files.filter((f) => !f._alreadyUploaded)
       const uploadedLocalFiles = localFiles.length > 0 ? await FileManager.uploadFiles(localFiles) : []
+      // Increment reference count for already-uploaded files
+      if (alreadyUploadedFiles.length > 0) {
+        await FileManager.addFiles(alreadyUploadedFiles)
+      }
       const uploadedFiles = [...alreadyUploadedFiles, ...uploadedLocalFiles]
 
       const baseUserMessage: MessageInputBaseParams = { assistant, topic, content: text }

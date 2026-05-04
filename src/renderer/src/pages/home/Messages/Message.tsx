@@ -222,7 +222,7 @@ const MessageItem: FC<Props> = ({
               </MessageErrorBoundary>
             </MessageContentContainer>
             {showMenubar && (
-              <MessageFooter className="MessageFooter" $isLastMessage={isLastMessage} $messageStyle={messageStyle}>
+              <MessageFooter className="MessageFooter" $isLastMessage={isLastMessage} $messageStyle={messageStyle} onClick={(e) => e.stopPropagation()}>
                 <MessageMenubar
                   message={message}
                   assistant={assistant}

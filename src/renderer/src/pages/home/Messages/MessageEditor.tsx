@@ -204,6 +204,10 @@ const MessageBlockEditor: FC<Props> = ({ message, topicId, onSave, onResend, onC
       const alreadyUploadedFiles = files.filter((f) => f._alreadyUploaded)
       const localFiles = files.filter((f) => !f._alreadyUploaded)
       const uploadedLocalFiles = localFiles.length > 0 ? await FileManager.uploadFiles(localFiles) : []
+      // Increment reference count for already-uploaded files
+      if (alreadyUploadedFiles.length > 0) {
+        await FileManager.addFiles(alreadyUploadedFiles)
+      }
       const allFiles = [...alreadyUploadedFiles, ...uploadedLocalFiles]
       allFiles.forEach((file) => {
         if (file.type === FileTypes.IMAGE) {
