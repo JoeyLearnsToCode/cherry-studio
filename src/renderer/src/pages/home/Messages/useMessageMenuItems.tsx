@@ -515,7 +515,7 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
               label: t('common.regenerate'),
               key: 'regenerate-assistant',
               icon: <RefreshIcon size={15} />,
-              onClick: onRegenerateWithConfirm
+              onClick: onRegenerate
             },
             {
               label: t('message.mention.title'),

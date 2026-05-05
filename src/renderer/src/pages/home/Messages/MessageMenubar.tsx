@@ -63,14 +63,17 @@ const MessageMenubar: FC<Props> = (props) => {
       <MenusBar
         className={classNames({ menubar: true, show: isLastMessage, 'user-bubble-style': isUserBubbleStyleMessage })}>
         {message.role === 'user' && (
-          <Tooltip title={t('common.regenerate')} mouseEnterDelay={0.8}>
-            <ActionButton
-              className="message-action-button"
-              onClick={() => handleResendUserMessage()}
-              $softHoverBg={isBubbleStyle}>
-              <RefreshIcon size={15} />
-            </ActionButton>
-          </Tooltip>
+          <Popconfirm
+            title={t('message.regenerate.confirm')}
+            okButtonProps={{ danger: true }}
+            icon={<InfoCircleOutlined style={{ color: 'red' }} />}
+            onConfirm={() => handleResendUserMessage()}>
+            <Tooltip title={t('common.regenerate')} mouseEnterDelay={0.8}>
+              <ActionButton className="message-action-button" $softHoverBg={isBubbleStyle}>
+                <RefreshIcon size={15} />
+              </ActionButton>
+            </Tooltip>
+          </Popconfirm>
         )}
         {message.role === 'user' && (
           <Tooltip title={t('common.edit')} mouseEnterDelay={0.8}>
@@ -93,17 +96,11 @@ const MessageMenubar: FC<Props> = (props) => {
           </ActionButton>
         </Tooltip>
         {isAssistantMessage && (
-          <Popconfirm
-            title={t('message.regenerate.confirm')}
-            okButtonProps={{ danger: true }}
-            icon={<InfoCircleOutlined style={{ color: 'red' }} />}
-            onConfirm={onRegenerate}>
-            <Tooltip title={t('common.regenerate')} mouseEnterDelay={0.8}>
-              <ActionButton className="message-action-button" $softHoverBg={softHoverBg}>
-                <RefreshIcon size={15} />
-              </ActionButton>
-            </Tooltip>
-          </Popconfirm>
+          <Tooltip title={t('common.regenerate')} mouseEnterDelay={0.8}>
+            <ActionButton className="message-action-button" onClick={onRegenerate} $softHoverBg={softHoverBg}>
+              <RefreshIcon size={15} />
+            </ActionButton>
+          </Tooltip>
         )}
         {isAssistantMessage && (
           <Tooltip title={t('message.mention.title')} mouseEnterDelay={0.8}>
