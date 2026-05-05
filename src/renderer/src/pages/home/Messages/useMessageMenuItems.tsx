@@ -56,6 +56,9 @@ interface UseMessageMenuItemsProps {
   isAssistantMessage: boolean
   messageContainerRef: React.RefObject<HTMLDivElement>
   onUpdateUseful?: (msgId: string) => void
+  deleteConfirmOpen?: boolean
+  onToggleDeleteConfirm?: () => void
+  deleteClickRef?: React.MutableRefObject<boolean>
 }
 
 export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
@@ -68,7 +71,10 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
     topic,
     model,
     messageContainerRef,
-    onUpdateUseful
+    onUpdateUseful,
+    deleteConfirmOpen = false,
+    onToggleDeleteConfirm,
+    deleteClickRef
   } = props
 
   const { t } = useTranslation()
@@ -551,13 +557,27 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
             }
           ]
         : []),
-      {
-        label: t('common.delete'),
-        key: 'delete',
-        icon: <Trash2 size={15} />,
-        danger: true,
-        onClick: onDeleteWithConfirm
-      },
+      deleteConfirmOpen
+        ? {
+            label: t('common.delete'),
+            key: 'delete',
+            icon: <Trash2 size={15} style={{ color: 'white' }} />,
+            style: { background: 'var(--color-error)', color: 'white', borderRadius: 4 },
+            onClick: () => {
+              if (deleteClickRef) deleteClickRef.current = false
+              onDelete()
+              onToggleDeleteConfirm?.()
+            }
+          }
+        : {
+            label: t('common.delete'),
+            key: 'delete',
+            icon: <Trash2 size={15} />,
+            onClick: () => {
+              if (deleteClickRef) deleteClickRef.current = true
+              onToggleDeleteConfirm?.()
+            }
+          },
       { type: 'divider' as const },
       ...moreMenuItems,
       ...(enableDeveloperMode && message.traceId
@@ -587,7 +607,9 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
       translateMenu,
       isGrouped,
       onUseful,
-      onDeleteWithConfirm,
+      onDelete,
+      onToggleDeleteConfirm,
+      deleteConfirmOpen,
       moreMenuItems,
       enableDeveloperMode,
       handleTraceUserMessage
