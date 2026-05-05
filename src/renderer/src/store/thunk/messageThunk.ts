@@ -1,6 +1,7 @@
 import { loggerService } from '@logger'
 import db from '@renderer/databases'
 import { fetchChatCompletion } from '@renderer/services/ApiService'
+import { EventEmitter, EVENT_NAMES } from '@renderer/services/EventService'
 import FileManager from '@renderer/services/FileManager'
 import { BlockManager } from '@renderer/services/messageStreaming/BlockManager'
 import { createCallbacks } from '@renderer/services/messageStreaming/callbacks'
@@ -1051,6 +1052,10 @@ export const appendAssistantResponseThunk =
       const insertAtIndex = existingMessageIndex !== -1 ? existingMessageIndex + 1 : currentTopicMessageIds.length
 
       dispatch(newMessagesActions.insertMessageAtIndex({ topicId, message: newAssistantStub, index: insertAtIndex }))
+
+      // Emit LOCATE_MESSAGE to scroll the new message into view
+      logger.debug(`[appendAssistantResponseThunk] Emitting LOCATE_MESSAGE for message ${newAssistantStub.id}`)
+      EventEmitter.emit(EVENT_NAMES.LOCATE_MESSAGE + ':' + newAssistantStub.id)
 
       // 4. Update Database (Save the stub to the topic's message list)
       await saveMessageAndBlocksToDB(newAssistantStub, [], insertAtIndex)

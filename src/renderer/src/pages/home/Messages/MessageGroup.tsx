@@ -23,10 +23,11 @@ const logger = loggerService.withContext('MessageGroup')
 interface Props {
   messages: (Message & { index: number })[]
   topic: Topic
+  assistant: import('@renderer/types').Assistant
   registerMessageElement?: (id: string, element: HTMLElement | null) => void
 }
 
-const MessageGroup = ({ messages, topic, registerMessageElement }: Props) => {
+const MessageGroup = ({ messages, topic, assistant, registerMessageElement }: Props) => {
   const messageLength = messages.length
 
   // Hooks
@@ -136,6 +137,9 @@ const MessageGroup = ({ messages, topic, registerMessageElement }: Props) => {
   }, [messages, selectedIndex, isGrouped, messageLength])
 
   // 添加对LOCATE_MESSAGE事件的监听
+  // 跟踪上一次的消息列表，用于检测新消息
+  const prevMessagesRef = useRef<Message[]>([])
+
   useEffect(() => {
     // 为每个消息注册一个定位事件监听器
     const eventHandlers: { [key: string]: () => void } = {}
@@ -143,24 +147,66 @@ const MessageGroup = ({ messages, topic, registerMessageElement }: Props) => {
     messages.forEach((message) => {
       const eventName = EVENT_NAMES.LOCATE_MESSAGE + ':' + message.id
       const handler = () => {
-        // 检查消息是否处于可见状态
-        const element = document.getElementById(`message-${message.id}`)
-        if (element) {
-          const display = window.getComputedStyle(element).display
+        logger.debug(`[LOCATE_MESSAGE] Received event for message ${message.id}`)
+        // 使用 requestAnimationFrame 等待 DOM 渲染完成后再滚动
+        const tryScroll = () => {
+          const element = document.getElementById(`message-${message.id}`)
+          if (element) {
+            const display = window.getComputedStyle(element).display
+            logger.debug(`[LOCATE_MESSAGE] Found element for message ${message.id}, display: ${display}`)
 
-          if (display === 'none') {
-            // 如果消息隐藏，先切换标签
-            setSelectedMessage(message)
+            if (display === 'none') {
+              // 如果消息隐藏，先切换标签
+              logger.debug(`[LOCATE_MESSAGE] Message hidden, switching to message ${message.id}`)
+              setSelectedMessage(message)
+            } else {
+              // 直接滚动
+              logger.debug(`[LOCATE_MESSAGE] Scrolling to message ${message.id}`)
+              element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }
           } else {
-            // 直接滚动
-            element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            // 元素尚未渲染，延迟后重试
+            logger.debug(`[LOCATE_MESSAGE] Element not found for message ${message.id}, retrying...`)
+            requestAnimationFrame(tryScroll)
           }
         }
+        requestAnimationFrame(tryScroll)
       }
 
       eventHandlers[eventName] = handler
       EventEmitter.on(eventName, handler)
     })
+
+    // 检测新消息并自动滚动
+    const prevMessageIds = new Set(prevMessagesRef.current.map((m) => m.id))
+    const newMessages = messages.filter((m) => !prevMessageIds.has(m.id))
+    
+    if (newMessages.length > 0) {
+      // 找到最后一个新消息
+      const lastNewMessage = newMessages[newMessages.length - 1]
+      logger.debug(`[MessageGroup] Detected new message ${lastNewMessage.id}, scrolling to it`)
+      
+      // 延迟滚动，确保 DOM 已渲染
+      requestAnimationFrame(() => {
+        const tryScroll = () => {
+          const element = document.getElementById(`message-${lastNewMessage.id}`)
+          if (element) {
+            const display = window.getComputedStyle(element).display
+            if (display === 'none') {
+              setSelectedMessage(lastNewMessage)
+            } else {
+              element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }
+          } else {
+            requestAnimationFrame(tryScroll)
+          }
+        }
+        tryScroll()
+      })
+    }
+
+    // 更新 prevMessagesRef
+    prevMessagesRef.current = messages
 
     // 清理函数
     return () => {
@@ -235,7 +281,12 @@ const MessageGroup = ({ messages, topic, registerMessageElement }: Props) => {
               [multiModelMessageStyle]: message.role === 'assistant' && messages.length > 1,
               selected: message.id === selectedMessageId
             }
-          ])}>
+          ])}
+          onClick={(e) => {
+            if (isGridGroupMessage) {
+              e.stopPropagation()
+            }
+          }}>
           <MessageItem
             onUpdateUseful={onUpdateUseful}
             isGroupContextMessage={isGrouped && message.id === groupContextMessageId}
@@ -311,6 +362,7 @@ const MessageGroup = ({ messages, topic, registerMessageElement }: Props) => {
             selectMessageId={selectedMessageId}
             setSelectedMessage={setSelectedMessage}
             topic={topic}
+            assistant={assistant}
           />
         )}
       </GroupContainer>
