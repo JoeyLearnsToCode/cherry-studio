@@ -1371,7 +1371,8 @@
     },
     "processing": "Processing...",
     "regenerate": {
-      "confirm": "Regenerating will replace current message"
+      "confirm": "Regenerating will replace current message",
+      "same_model": "Generate again with same model"
     },
     "reset": {
       "confirm": {

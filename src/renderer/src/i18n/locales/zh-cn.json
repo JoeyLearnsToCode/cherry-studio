@@ -1371,7 +1371,8 @@
     },
     "processing": "正在处理...",
     "regenerate": {
-      "confirm": "重新生成会覆盖当前消息"
+      "confirm": "重新生成会覆盖当前消息",
+      "same_model": "使用相同模型再次生成"
     },
     "reset": {
       "confirm": {
