@@ -91,7 +91,7 @@ const assistantsSlice = createSlice({
         [tag]: !prev[tag]
       }
     },
-    addTopic: (state, action: PayloadAction<{ assistantId: string; topic: Topic }>) => {
+    addTopic: (state, action: PayloadAction<{ assistantId: string; topic: Topic; insertAfterTopicId?: string }>) => {
       const topic = action.payload.topic
       topic.createdAt = topic.createdAt || new Date().toISOString()
       topic.updatedAt = topic.updatedAt || new Date().toISOString()
@@ -99,7 +99,18 @@ const assistantsSlice = createSlice({
         assistant.id === action.payload.assistantId
           ? {
               ...assistant,
-              topics: uniqBy([topic, ...assistant.topics], 'id')
+              topics: (() => {
+                const insertAfterId = action.payload.insertAfterTopicId
+                if (insertAfterId) {
+                  const idx = assistant.topics.findIndex((t) => t.id === insertAfterId)
+                  if (idx !== -1) {
+                    const newTopics = [...assistant.topics]
+                    newTopics.splice(idx + 1, 0, topic)
+                    return uniqBy(newTopics, 'id')
+                  }
+                }
+                return uniqBy([topic, ...assistant.topics], 'id')
+              })()
             }
           : assistant
       )

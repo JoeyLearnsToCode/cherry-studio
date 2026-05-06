@@ -144,7 +144,7 @@ export function useAssistant(id: string) {
   return {
     assistant: assistantWithModel,
     model,
-    addTopic: (topic: Topic) => dispatch(addTopic({ assistantId: assistant.id, topic })),
+    addTopic: (topic: Topic, insertAfterTopicId?: string) => dispatch(addTopic({ assistantId: assistant.id, topic, insertAfterTopicId })),
     removeTopic: (topic: Topic) => {
       TopicManager.removeTopic(topic.id)
       dispatch(removeTopic({ assistantId: assistant.id, topic }))
