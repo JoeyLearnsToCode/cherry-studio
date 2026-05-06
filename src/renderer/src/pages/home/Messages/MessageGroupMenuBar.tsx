@@ -7,11 +7,17 @@ import {
 } from '@ant-design/icons'
 import { HStack } from '@renderer/components/Layout'
 import { useMessageOperations } from '@renderer/hooks/useMessageOperations'
+import SelectModelPopup from '@renderer/components/Popups/SelectModelPopup'
+import { isEmbeddingModel, isRerankModel, isVisionModel } from '@renderer/config/models'
 import { MultiModelMessageStyle } from '@renderer/store/settings'
-import type { Topic } from '@renderer/types'
-import type { Message } from '@renderer/types/newMessage'
+import store from '@renderer/store'
+import { messageBlocksSelectors } from '@renderer/store/messageBlock'
+import { selectMessagesForTopic } from '@renderer/store/newMessage'
+import type { Topic, Assistant, Model } from '@renderer/types'
+import { type Message, MessageBlockType } from '@renderer/types/newMessage'
 import { Button, Tooltip } from 'antd'
-import { FC, memo } from 'react'
+import { AtSign, MessageSquarePlus } from 'lucide-react'
+import { FC, memo, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
@@ -25,6 +31,7 @@ interface Props {
   selectMessageId: string
   setSelectedMessage: (message: Message) => void
   topic: Topic
+  assistant: Assistant
 }
 
 const MessageGroupMenuBar: FC<Props> = ({
@@ -33,10 +40,43 @@ const MessageGroupMenuBar: FC<Props> = ({
   messages,
   selectMessageId,
   setSelectedMessage,
-  topic
+  topic,
+  assistant
 }) => {
   const { t } = useTranslation()
-  const { deleteGroupMessages } = useMessageOperations(topic)
+  const { deleteGroupMessages, appendAssistantResponse } = useMessageOperations(topic)
+
+  const mentionModelFilter = useMemo(() => {
+    const defaultFilter = (model: Model) => !isEmbeddingModel(model) && !isRerankModel(model)
+    const firstMessage = messages[0]
+    if (!firstMessage) return defaultFilter
+    const state = store.getState()
+    const topicMessages: Message[] = selectMessagesForTopic(state, topic.id)
+    const relatedUserMessage = topicMessages.find((msg) => msg.role === 'user' && firstMessage.askId === msg.id)
+    if (!relatedUserMessage) return defaultFilter
+    const relatedUserMessageBlocks = relatedUserMessage.blocks.map((msgBlockId) =>
+      messageBlocksSelectors.selectById(store.getState(), msgBlockId)
+    )
+    if (!relatedUserMessageBlocks) return defaultFilter
+    if (relatedUserMessageBlocks.some((block) => block && block.type === MessageBlockType.IMAGE)) {
+      return (m: Model) => isVisionModel(m) && defaultFilter(m)
+    }
+    return defaultFilter
+  }, [messages, topic.id])
+
+  const onSwitchModel = useCallback(async () => {
+    const selectedMessage = messages.find((m) => m.id === selectMessageId) || messages[messages.length - 1]
+    if (!selectedMessage) return
+    const selectedModel = await SelectModelPopup.show({ model: selectedMessage.model, filter: mentionModelFilter })
+    if (!selectedModel) return
+    appendAssistantResponse(selectedMessage, selectedModel, { ...assistant, model: selectedModel })
+  }, [messages, selectMessageId, mentionModelFilter, appendAssistantResponse, assistant])
+
+  const onRegenerateWithSameModel = useCallback(async () => {
+    const selectedMessage = messages[messages.length - 1]
+    if (!selectedMessage || !selectedMessage.model) return
+    appendAssistantResponse(selectedMessage, selectedMessage.model, { ...assistant, model: selectedMessage.model })
+  }, [messages, selectMessageId, appendAssistantResponse, assistant])
 
   const handleDeleteGroup = async () => {
     const askId = messages[0]?.askId
@@ -95,6 +135,17 @@ const MessageGroupMenuBar: FC<Props> = ({
         )}
         {multiModelMessageStyle === 'grid' && <MessageGroupSettings />}
       </HStack>
+      <Tooltip title={t('message.regenerate.same_model')} mouseEnterDelay={0.5}>
+        <Button
+          type="text"
+          size="small"
+          icon={<MessageSquarePlus size={15} />}
+          onClick={onRegenerateWithSameModel}
+        />
+      </Tooltip>
+      <Tooltip title={t('message.mention.title')} mouseEnterDelay={0.5}>
+        <Button type="text" size="small" icon={<AtSign size={15} />} onClick={onSwitchModel} />
+      </Tooltip>
       <Button
         type="text"
         size="small"
@@ -117,6 +168,10 @@ const GroupMenuBar = styled.div<{ $layout: MultiModelMessageStyle }>`
   overflow: hidden;
   border: 0.5px solid var(--color-border);
   height: 40px;
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  background-color: var(--color-background);
 `
 
 const LayoutContainer = styled.div`

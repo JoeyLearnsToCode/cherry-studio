@@ -6,7 +6,7 @@ import type { Assistant, Model, Topic } from '@renderer/types'
 import { type Message } from '@renderer/types/newMessage'
 import { classNames } from '@renderer/utils'
 import { Dropdown, Popconfirm, Tooltip } from 'antd'
-import { AtSign, Check, Languages, Menu, ThumbsUp } from 'lucide-react'
+import { AtSign, Check, Languages, Menu, MessageSquarePlus, ThumbsUp } from 'lucide-react'
 import { FC, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -26,13 +26,17 @@ interface Props {
   messageContainerRef: React.RefObject<HTMLDivElement>
   setModel: (model: Model) => void
   onUpdateUseful?: (msgId: string) => void
+  deleteConfirmOpen?: boolean
+  onToggleDeleteConfirm?: () => void
 }
 
 const MessageMenubar: FC<Props> = (props) => {
   const {
     message,
     isLastMessage,
-    isAssistantMessage
+    isAssistantMessage,
+    deleteConfirmOpen = false,
+    onToggleDeleteConfirm
   } = props
   const { t } = useTranslation()
   const { isBubbleStyle } = useMessageStyle()
@@ -42,6 +46,7 @@ const MessageMenubar: FC<Props> = (props) => {
     onEdit,
     onDelete,
     onRegenerate,
+    onRegenerateWithSameModel,
     onMentionModel,
     onRespondToUserMessage,
     onUseful,
@@ -63,14 +68,17 @@ const MessageMenubar: FC<Props> = (props) => {
       <MenusBar
         className={classNames({ menubar: true, show: isLastMessage, 'user-bubble-style': isUserBubbleStyleMessage })}>
         {message.role === 'user' && (
-          <Tooltip title={t('common.regenerate')} mouseEnterDelay={0.8}>
-            <ActionButton
-              className="message-action-button"
-              onClick={() => handleResendUserMessage()}
-              $softHoverBg={isBubbleStyle}>
-              <RefreshIcon size={15} />
-            </ActionButton>
-          </Tooltip>
+          <Popconfirm
+            title={t('message.regenerate.confirm')}
+            okButtonProps={{ danger: true }}
+            icon={<InfoCircleOutlined style={{ color: 'red' }} />}
+            onConfirm={() => handleResendUserMessage()}>
+            <Tooltip title={t('common.regenerate')} mouseEnterDelay={0.8}>
+              <ActionButton className="message-action-button" $softHoverBg={isBubbleStyle}>
+                <RefreshIcon size={15} />
+              </ActionButton>
+            </Tooltip>
+          </Popconfirm>
         )}
         {message.role === 'user' && (
           <Tooltip title={t('common.edit')} mouseEnterDelay={0.8}>
@@ -93,17 +101,21 @@ const MessageMenubar: FC<Props> = (props) => {
           </ActionButton>
         </Tooltip>
         {isAssistantMessage && (
-          <Popconfirm
-            title={t('message.regenerate.confirm')}
-            okButtonProps={{ danger: true }}
-            icon={<InfoCircleOutlined style={{ color: 'red' }} />}
-            onConfirm={onRegenerate}>
-            <Tooltip title={t('common.regenerate')} mouseEnterDelay={0.8}>
-              <ActionButton className="message-action-button" $softHoverBg={softHoverBg}>
-                <RefreshIcon size={15} />
-              </ActionButton>
-            </Tooltip>
-          </Popconfirm>
+          <Tooltip title={t('common.regenerate')} mouseEnterDelay={0.8}>
+            <ActionButton className="message-action-button" onClick={onRegenerate} $softHoverBg={softHoverBg}>
+              <RefreshIcon size={15} />
+            </ActionButton>
+          </Tooltip>
+        )}
+        {isAssistantMessage && (
+          <Tooltip title={t('message.regenerate.same_model')} mouseEnterDelay={0.8}>
+            <ActionButton
+              className="message-action-button"
+              onClick={onRegenerateWithSameModel}
+              $softHoverBg={softHoverBg}>
+              <MessageSquarePlus size={15} />
+            </ActionButton>
+          </Tooltip>
         )}
         {isAssistantMessage && (
           <Tooltip title={t('message.mention.title')} mouseEnterDelay={0.8}>
@@ -147,20 +159,23 @@ const MessageMenubar: FC<Props> = (props) => {
             </ActionButton>
           </Tooltip>
         )}
-        <Popconfirm
-          title={t('message.message.delete.content')}
-          okButtonProps={{ danger: true }}
-          icon={<InfoCircleOutlined style={{ color: 'red' }} />}
-          onConfirm={onDelete}>
-          <ActionButton
-            className="message-action-button"
-            onClick={(e) => e.stopPropagation()}
-            $softHoverBg={softHoverBg}>
-            <Tooltip title={t('common.delete')} mouseEnterDelay={1}>
-              <DeleteIcon size={15} />
-            </Tooltip>
-          </ActionButton>
-        </Popconfirm>
+<Tooltip title={t('common.delete')} mouseEnterDelay={1}>
+  <ActionButton
+    className="message-action-button"
+    onClick={(e) => {
+      e.stopPropagation()
+      if (deleteConfirmOpen) {
+        onDelete()
+        onToggleDeleteConfirm?.()
+      } else {
+        onToggleDeleteConfirm?.()
+      }
+    }}
+    $deleteConfirm={deleteConfirmOpen}
+    $softHoverBg={softHoverBg}>
+    <DeleteIcon size={15} />
+  </ActionButton>
+</Tooltip>
         {message.traceId && (
           <Tooltip title={t('trace.label')} mouseEnterDelay={0.8}>
             <ActionButton className="message-action-button" onClick={() => handleTraceUserMessage()}>
@@ -198,7 +213,7 @@ const MenusBar = styled.div`
   }
 `
 
-const ActionButton = styled.div<{ $softHoverBg?: boolean }>`
+const ActionButton = styled.div<{ $softHoverBg?: boolean; $deleteConfirm?: boolean }>`
   cursor: pointer;
   border-radius: 8px;
   display: flex;
@@ -208,20 +223,15 @@ const ActionButton = styled.div<{ $softHoverBg?: boolean }>`
   width: 26px;
   height: 26px;
   transition: all 0.2s ease;
-  &:hover {
-    background-color: ${(props) =>
-      props.$softHoverBg ? 'var(--color-background-soft)' : 'var(--color-background-mute)'};
-    color: var(--color-text-1);
-    .anticon,
-    .lucide {
-      color: var(--color-text-1);
-    }
-  }
+  background-color: ${(props) => (props.$deleteConfirm ? 'var(--color-error)' : 'transparent')};
   .anticon,
   .iconfont {
     cursor: pointer;
     font-size: 14px;
-    color: var(--color-icon);
+    color: ${(props) => (props.$deleteConfirm ? 'white' : 'var(--color-icon)')};
+  }
+  .lucide {
+    color: ${(props) => (props.$deleteConfirm ? 'white' : 'var(--color-icon)')};
   }
   .icon-at {
     font-size: 16px;

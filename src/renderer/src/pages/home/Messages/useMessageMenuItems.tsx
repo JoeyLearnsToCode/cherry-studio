@@ -40,7 +40,7 @@ import {
 } from '@renderer/utils/messageUtils/find'
 import { MenuProps } from 'antd'
 import dayjs from 'dayjs'
-import { AtSign, Check, FilePenLine, Languages, ListChecks, Save, Split, ThumbsUp, Trash2, Upload } from 'lucide-react'
+import { AtSign, Check, FilePenLine, Languages, ListChecks, MessageSquarePlus, Save, Split, ThumbsUp, Trash2, Upload } from 'lucide-react'
 import React, { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSelector } from 'react-redux'
@@ -56,6 +56,9 @@ interface UseMessageMenuItemsProps {
   isAssistantMessage: boolean
   messageContainerRef: React.RefObject<HTMLDivElement>
   onUpdateUseful?: (msgId: string) => void
+  deleteConfirmOpen?: boolean
+  onToggleDeleteConfirm?: () => void
+  deleteClickRef?: React.MutableRefObject<boolean>
 }
 
 export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
@@ -68,7 +71,10 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
     topic,
     model,
     messageContainerRef,
-    onUpdateUseful
+    onUpdateUseful,
+    deleteConfirmOpen = false,
+    onToggleDeleteConfirm,
+    deleteClickRef
   } = props
 
   const { t } = useTranslation()
@@ -241,6 +247,11 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
     if (!selectedModel) return
     appendAssistantResponse(message, selectedModel, { ...assistant, model: selectedModel })
   }, [appendAssistantResponse, assistant, mentionModelFilter, message, model])
+
+  const onRegenerateWithSameModel = useCallback(async () => {
+    if (!model) return
+    appendAssistantResponse(message, model, { ...assistant, model })
+  }, [appendAssistantResponse, assistant, message, model])
 
   const onRespondToUserMessage = useCallback(async () => {
     const selectedModel = await SelectModelPopup.show({ model, filter: userMessageModelFilter })
@@ -515,7 +526,13 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
               label: t('common.regenerate'),
               key: 'regenerate-assistant',
               icon: <RefreshIcon size={15} />,
-              onClick: onRegenerateWithConfirm
+              onClick: onRegenerate
+            },
+            {
+              label: t('message.regenerate.same_model'),
+              key: 'regenerate-same-model',
+              icon: <MessageSquarePlus size={15} />,
+              onClick: onRegenerateWithSameModel
             },
             {
               label: t('message.mention.title'),
@@ -540,13 +557,27 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
             }
           ]
         : []),
-      {
-        label: t('common.delete'),
-        key: 'delete',
-        icon: <Trash2 size={15} />,
-        danger: true,
-        onClick: onDeleteWithConfirm
-      },
+      deleteConfirmOpen
+        ? {
+            label: t('common.delete'),
+            key: 'delete',
+            icon: <Trash2 size={15} style={{ color: 'white' }} />,
+            style: { background: 'var(--color-error)', color: 'white', borderRadius: 4 },
+            onClick: () => {
+              if (deleteClickRef) deleteClickRef.current = false
+              onDelete()
+              onToggleDeleteConfirm?.()
+            }
+          }
+        : {
+            label: t('common.delete'),
+            key: 'delete',
+            icon: <Trash2 size={15} />,
+            onClick: () => {
+              if (deleteClickRef) deleteClickRef.current = true
+              onToggleDeleteConfirm?.()
+            }
+          },
       { type: 'divider' as const },
       ...moreMenuItems,
       ...(enableDeveloperMode && message.traceId
@@ -576,7 +607,9 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
       translateMenu,
       isGrouped,
       onUseful,
-      onDeleteWithConfirm,
+      onDelete,
+      onToggleDeleteConfirm,
+      deleteConfirmOpen,
       moreMenuItems,
       enableDeveloperMode,
       handleTraceUserMessage
@@ -594,6 +627,7 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
     onDeleteWithConfirm,
     onRegenerate,
     onRegenerateWithConfirm,
+    onRegenerateWithSameModel,
     onNewBranch,
     onMentionModel,
     onRespondToUserMessage,
