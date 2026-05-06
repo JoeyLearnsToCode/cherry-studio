@@ -55,7 +55,9 @@ interface Props {
  */
 export const CodeBlockView: React.FC<Props> = memo(({ children, language, onSave }) => {
   const { t } = useTranslation()
-  const { codeEditor, codeExecution, codeImageTools, codeCollapsible, codeWrappable } = useSettings()
+  const { codeEditor, codeExecution, codeImageTools, codeCollapsible } = useSettings()
+  // 强制启用软换行功能，不依赖用户设置
+  const codeWrappable = true
 
   const [viewState, setViewState] = useState({
     mode: 'special' as ViewMode,
@@ -113,7 +115,8 @@ export const CodeBlockView: React.FC<Props> = memo(({ children, language, onSave
   }, [codeWrappable])
 
   const shouldExpand = useMemo(() => !codeCollapsible || expandOverride, [codeCollapsible, expandOverride])
-  const shouldWrap = useMemo(() => codeWrappable && wrapOverride, [codeWrappable, wrapOverride])
+  // Always enable soft wrap when wrapOverride is true, regardless of codeWrappable setting
+  const shouldWrap = useMemo(() => wrapOverride, [wrapOverride])
 
   const [sourceScrollHeight, setSourceScrollHeight] = useState(0)
   const expandable = useMemo(() => {
