@@ -73,12 +73,12 @@ export const createImageCallbacks = (deps: ImageCallbacksDependencies) => {
         } else {
           const imageUrl = imageData.images?.[0] || 'placeholder_image_url'
 
-          // 先设 SUCCESS，保证会话不会卡在"进行中"状态
+          // 先设 SUCCESS + _localizing，阻止组件 useEffect 并行下载
           blockManager.smartBlockUpdate(
             blockId,
             {
               url: imageUrl,
-              metadata: { generateImageResponse: imageData },
+              metadata: { generateImageResponse: imageData, _localizing: true },
               status: MessageBlockStatus.SUCCESS
             } as Partial<ImageMessageBlock>,
             MessageBlockType.IMAGE,
@@ -86,21 +86,23 @@ export const createImageCallbacks = (deps: ImageCallbacksDependencies) => {
           )
 
           // 再 await 下载到本地，完成后更新 metadata
-          // 组件 useEffect 通过 seenStreaming 跳过流式期间，不会重复下载
           const images: string[] = imageData.images || []
           try {
             const localFiles = await Promise.all(images.map(downloadImageToLocal))
-            const hasLocal = localFiles.some((f) => f !== null)
-            if (hasLocal) {
-              blockManager.smartBlockUpdate(
-                blockId,
-                { metadata: { generateImageResponse: imageData, localFiles } } as Partial<ImageMessageBlock>,
-                MessageBlockType.IMAGE,
-                true
-              )
-            }
+            blockManager.smartBlockUpdate(
+              blockId,
+              { metadata: { generateImageResponse: imageData, localFiles, _localizing: false } } as Partial<ImageMessageBlock>,
+              MessageBlockType.IMAGE,
+              true
+            )
           } catch {
-            // 下载失败，保留远程 URL，下次打开会话时组件兜底处理
+            // 下载失败，释放 _localizing 让兜底机制可重试
+            blockManager.smartBlockUpdate(
+              blockId,
+              { metadata: { generateImageResponse: imageData, _localizing: false } } as Partial<ImageMessageBlock>,
+              MessageBlockType.IMAGE,
+              true
+            )
           }
         }
       } else {
