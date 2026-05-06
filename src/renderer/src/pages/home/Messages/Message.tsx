@@ -129,6 +129,13 @@ const MessageItem: FC<Props> = ({
   })
   onDeleteRef.current = onDelete
 
+  // 窗口失焦时关闭右键菜单
+  useEffect(() => {
+    const handleWindowBlur = () => setContextMenuOpen(false)
+    window.addEventListener('blur', handleWindowBlur)
+    return () => window.removeEventListener('blur', handleWindowBlur)
+  }, [])
+
   useEffect(() => {
     if (isEditing && messageContainerRef.current) {
       messageContainerRef.current.scrollIntoView({
@@ -307,7 +314,7 @@ const MessageItem: FC<Props> = ({
     <WrapperContainer isMultiSelectMode={isMultiSelectMode}>
       {!isMultiSelectMode && !isEditing ? (
         <Dropdown
-          menu={{ items: contextMenuItems }}
+          menu={{ items: contextMenuItems, onClick: (e) => e.domEvent.stopPropagation() }}
           trigger={['contextMenu']}
           open={contextMenuOpen}
           onOpenChange={(open) => {
