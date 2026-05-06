@@ -138,6 +138,11 @@ const MessageItem: FC<Props> = ({
 
   useEffect(() => {
     if (isEditing && messageContainerRef.current) {
+      console.info(`[DBG-SCROLL] isEditing scrollIntoView`, {
+        messageId: message.id,
+        messageRole: message.role,
+        caller: 'MessageItem useEffect(isEditing)'
+      })
       messageContainerRef.current.scrollIntoView({
         behavior: 'smooth',
         block: 'center'
@@ -186,6 +191,13 @@ const MessageItem: FC<Props> = ({
 
   const messageHighlightHandler = useCallback(
     (highlight: boolean = true) => {
+      console.info(`[DBG-SCROLL] messageHighlightHandler called`, {
+        messageId: message.id,
+        messageRole: message.role,
+        highlight,
+        hasRef: !!messageContainerRef.current,
+        caller: 'MessageItem.messageHighlightHandler'
+      })
       if (messageContainerRef.current) {
         messageContainerRef.current.scrollIntoView({ behavior: 'smooth' })
         if (highlight) {

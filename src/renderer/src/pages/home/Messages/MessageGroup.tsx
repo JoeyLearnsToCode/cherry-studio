@@ -66,18 +66,37 @@ const MessageGroup = ({ messages, topic, assistant, registerMessageElement }: Pr
   }, [messages])
 
   const setSelectedMessage = useCallback(
-    (message: Message) => {
+    (message: Message, skipScroll = false) => {
+      console.info(`[DBG-SCROLL] setSelectedMessage called`, {
+        messageId: message.id,
+        prevSelectedMessageId: selectedMessageId,
+        skipScroll,
+        caller: 'setSelectedMessage',
+        stack: new Error().stack?.split('\n').slice(1, 5).join('\n')
+      })
       // 前一个
       editMessage(selectedMessageId, { foldSelected: false })
       // 当前选中的消息
       editMessage(message.id, { foldSelected: true })
+
+      if (skipScroll) {
+        console.info(`[DBG-SCROLL] scrollIntoView SKIPPED by skipScroll flag`, { messageId: message.id })
+        return
+      }
 
       setTimeoutTimer(
         'setSelectedMessage',
         () => {
           const messageElement = document.getElementById(`message-${message.id}`)
           if (messageElement) {
+            console.info(`[DBG-SCROLL] scrollIntoView in setSelectedMessage`, {
+              messageId: message.id,
+              hasElement: true,
+              caller: 'setSelectedMessage->setTimeoutTimer'
+            })
             messageElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          } else {
+            console.info(`[DBG-SCROLL] scrollIntoView SKIPPED - no element`, { messageId: message.id, caller: 'setSelectedMessage' })
           }
         },
         200
@@ -88,11 +107,19 @@ const MessageGroup = ({ messages, topic, assistant, registerMessageElement }: Pr
 
   useEffect(() => {
     if (messageLength > prevMessageLengthRef.current) {
+      console.info(`[DBG-SCROLL] messageLength increased useEffect`, {
+        prevLength: prevMessageLengthRef.current,
+        newLength: messageLength,
+        lastMessageId: messages[messageLength - 1]?.id,
+        lastMessageRole: messages[messageLength - 1]?.role,
+        caller: 'MessageGroup useEffect(messageLength)'
+      })
       setSelectedIndex(messageLength - 1)
-      const lastMessage = messages[messageLength - 1]
-      if (lastMessage) {
-        setSelectedMessage(lastMessage)
-      }
+      // Do NOT call setSelectedMessage here — new message detection in the
+      // messages useEffect below handles scrolling to genuinely new messages.
+      // Calling setSelectedMessage with messages[messageLength-1] can scroll
+      // to the wrong message when insertMessageAtIndex places the new message
+      // somewhere other than the array tail.
     } else {
       const newIndex = messages.findIndex((msg) => msg.id === selectedMessageId)
       if (newIndex !== -1) {
@@ -147,6 +174,11 @@ const MessageGroup = ({ messages, topic, assistant, registerMessageElement }: Pr
     messages.forEach((message) => {
       const eventName = EVENT_NAMES.LOCATE_MESSAGE + ':' + message.id
       const handler = () => {
+        console.info(`[DBG-SCROLL] LOCATE_MESSAGE event handler triggered`, {
+          messageId: message.id,
+          caller: 'MessageGroup useEffect(LOCATE_MESSAGE)',
+          timestamp: Date.now()
+        })
         logger.debug(`[LOCATE_MESSAGE] Received event for message ${message.id}`)
         // 使用 requestAnimationFrame 等待 DOM 渲染完成后再滚动
         const tryScroll = () => {
@@ -157,10 +189,20 @@ const MessageGroup = ({ messages, topic, assistant, registerMessageElement }: Pr
 
             if (display === 'none') {
               // 如果消息隐藏，先切换标签
+              console.info(`[DBG-SCROLL] LOCATE_MESSAGE: message hidden, calling setSelectedMessage`, {
+                messageId: message.id,
+                display,
+                caller: 'LOCATE_MESSAGE handler -> setSelectedMessage'
+              })
               logger.debug(`[LOCATE_MESSAGE] Message hidden, switching to message ${message.id}`)
               setSelectedMessage(message)
             } else {
               // 直接滚动
+              console.info(`[DBG-SCROLL] LOCATE_MESSAGE: scrollIntoView directly`, {
+                messageId: message.id,
+                display,
+                caller: 'LOCATE_MESSAGE handler -> scrollIntoView'
+              })
               logger.debug(`[LOCATE_MESSAGE] Scrolling to message ${message.id}`)
               element.scrollIntoView({ behavior: 'smooth', block: 'start' })
             }
@@ -180,21 +222,36 @@ const MessageGroup = ({ messages, topic, assistant, registerMessageElement }: Pr
     // 检测新消息并自动滚动
     const prevMessageIds = new Set(prevMessagesRef.current.map((m) => m.id))
     const newMessages = messages.filter((m) => !prevMessageIds.has(m.id))
-    
+
     if (newMessages.length > 0) {
-      // 找到最后一个新消息
       const lastNewMessage = newMessages[newMessages.length - 1]
+      console.info(`[DBG-SCROLL] new message detection triggered`, {
+        newMessageIds: newMessages.map(m => m.id),
+        lastNewMessageId: lastNewMessage.id,
+        newCount: newMessages.length,
+        totalMessages: messages.length,
+        caller: 'MessageGroup useEffect(messages) - new message detection'
+      })
       logger.debug(`[MessageGroup] Detected new message ${lastNewMessage.id}, scrolling to it`)
-      
-      // 延迟滚动，确保 DOM 已渲染
+
       requestAnimationFrame(() => {
         const tryScroll = () => {
           const element = document.getElementById(`message-${lastNewMessage.id}`)
           if (element) {
             const display = window.getComputedStyle(element).display
             if (display === 'none') {
+              console.info(`[DBG-SCROLL] new message: hidden, calling setSelectedMessage`, {
+                messageId: lastNewMessage.id,
+                display,
+                caller: 'newMessageDetection -> setSelectedMessage'
+              })
               setSelectedMessage(lastNewMessage)
             } else {
+              console.info(`[DBG-SCROLL] new message: scrollIntoView`, {
+                messageId: lastNewMessage.id,
+                display,
+                caller: 'newMessageDetection -> scrollIntoView'
+              })
               element.scrollIntoView({ behavior: 'smooth', block: 'start' })
             }
           } else {
@@ -202,6 +259,12 @@ const MessageGroup = ({ messages, topic, assistant, registerMessageElement }: Pr
           }
         }
         tryScroll()
+      })
+    } else {
+      console.info(`[DBG-SCROLL] messages changed but no new messages detected`, {
+        totalMessages: messages.length,
+        prevCount: prevMessagesRef.current.length,
+        caller: 'MessageGroup useEffect(messages)'
       })
     }
 
