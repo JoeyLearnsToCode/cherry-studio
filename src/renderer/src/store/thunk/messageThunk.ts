@@ -1141,15 +1141,6 @@ export const respondToUserMessageThunk =
 
       dispatch(newMessagesActions.insertMessageAtIndex({ topicId, message: newAssistantStub, index: insertAtIndex }))
 
-      console.info(`[DBG-SCROLL] respondToUserMessageThunk: dispatched newAssistantStub`, {
-        newMessageId: newAssistantStub.id,
-        userMessageId,
-        insertAtIndex,
-        topicId,
-        caller: 'respondToUserMessageThunk',
-        timestamp: Date.now()
-      })
-
       await saveMessageAndBlocksToDB(newAssistantStub, [], insertAtIndex)
 
       const assistantConfigForThisCall = { ...assistant, model: newModel }
