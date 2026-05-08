@@ -24,11 +24,13 @@ import {
   updateTranslationBlockThunk
 } from '@renderer/store/thunk/messageThunk'
 import type { Assistant, Model, Topic, TranslateLanguageCode } from '@renderer/types'
-import type { Message, MessageBlock } from '@renderer/types/newMessage'
+import type { Message, MessageBlock, MessageVersion } from '@renderer/types/newMessage'
 import { MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import { abortCompletion } from '@renderer/utils/abortController'
+import { getMainTextContent } from '@renderer/utils/messageUtils/find'
 import { throttle } from 'lodash'
 import { useCallback } from 'react'
+import { v4 as uuidv4 } from 'uuid'
 
 const logger = loggerService.withContext('UseMessageOperations')
 
@@ -391,20 +393,66 @@ export function useMessageOperations(topic: Topic) {
             updatedAt: new Date().toISOString()
           }))
 
-        // 5. Prepare message update with new block IDs
-        const updatedBlockIds = editedBlocks.map((block) => block.id)
+        // 5. Prepare message update object
         const messageUpdates: Partial<Message> & Pick<Message, 'id'> = {
           id: messageId,
-          updatedAt: new Date().toISOString(),
-          blocks: updatedBlockIds
+          updatedAt: new Date().toISOString()
         }
 
-        // 6. Log operations for debugging
-        // console.log('[editMessageBlocks] Operations:', {
-        //   blocksToRemove: blockIdsToRemove.length,
-        //   blocksToUpdate: blocksToUpdate.length,
-        //   blocksToAdd: blocksToAdd.length
-        // })
+        // 6. For user messages, create version history when main text content changes
+        if (message.role === 'user') {
+          const originalContent = getMainTextContent(message)
+          const editedMainTextBlock = editedBlocks.find((b) => b.type === MessageBlockType.MAIN_TEXT)
+          const newContent = editedMainTextBlock && 'content' in editedMainTextBlock ? editedMainTextBlock.content : ''
+
+          if (originalContent !== newContent) {
+            const normalizeContent = (s: string) => s.replace(/^[\s\t\r\n]+|[\s\t\r\n]+$/g, '')
+            const normalizedNew = normalizeContent(newContent)
+            const existingVersions: MessageVersion[] = message.versions || []
+
+            // 如果没有历史版本，先把当前内容存为第一个版本
+            const baseVersions = existingVersions.length === 0
+              ? [{ id: uuidv4(), content: originalContent, createdAt: message.createdAt }]
+              : existingVersions
+
+            // 匹配已有版本：内容相同（去除首尾空白）则切回该版本
+            const matchedIndex = baseVersions.findIndex(v => normalizeContent(v.content) === normalizedNew)
+
+            if (matchedIndex !== -1) {
+              // 切回已有版本：用新内容更新该版本（保持首尾空白一致），同步 block 内容
+              const updatedVersions = [...baseVersions]
+              updatedVersions[matchedIndex] = {
+                ...updatedVersions[matchedIndex],
+                content: newContent,
+                updatedAt: new Date().toISOString()
+              }
+              messageUpdates.versions = updatedVersions
+              messageUpdates.activeVersionId = updatedVersions[matchedIndex].id
+
+              // 同步 main_text block 内容为该版本内容
+              const mainTextBlockIdx = editedBlocks.findIndex(b => b.type === MessageBlockType.MAIN_TEXT)
+              if (mainTextBlockIdx !== -1) {
+                const block = editedBlocks[mainTextBlockIdx]
+                if ('content' in block) {
+                  editedBlocks[mainTextBlockIdx] = { ...block, content: newContent }
+                }
+              }
+            } else {
+              // 创建新版本
+              const newVersion: MessageVersion = {
+                id: uuidv4(),
+                content: newContent,
+                createdAt: new Date().toISOString()
+              }
+
+              messageUpdates.versions = [...baseVersions, newVersion]
+              messageUpdates.activeVersionId = newVersion.id
+            }
+          }
+        }
+
+        // 7. Set block IDs
+        messageUpdates.blocks = editedBlocks.map((block) => block.id)
 
         // 7. Update Redux state and database
         // First update message and add/update blocks
@@ -414,6 +462,11 @@ export function useMessageOperations(topic: Topic) {
 
         if (blocksToUpdate.length > 0) {
           await dispatch(updateMessageAndBlocksThunk(topic.id, messageUpdates, blocksToUpdate))
+        }
+
+        // If only message properties changed (e.g. versions), still need to persist
+        if (blocksToAdd.length === 0 && blocksToUpdate.length === 0) {
+          await dispatch(updateMessageAndBlocksThunk(topic.id, messageUpdates, []))
         }
 
         // Then remove blocks if needed
