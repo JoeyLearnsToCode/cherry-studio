@@ -9,7 +9,7 @@ import { createStreamProcessor, type StreamProcessorCallbacks } from '@renderer/
 import store from '@renderer/store'
 import { updateTopicUpdatedAt } from '@renderer/store/assistants'
 import { type Assistant, type FileMetadata, type Model, type Topic } from '@renderer/types'
-import type { FileMessageBlock, ImageMessageBlock, MainTextMessageBlock, Message, MessageBlock } from '@renderer/types/newMessage'
+import type { FileMessageBlock, ImageMessageBlock, MainTextMessageBlock, Message, MessageBlock, MessageVersion } from '@renderer/types/newMessage'
 import { AssistantMessageStatus, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import { uuid } from '@renderer/utils'
 import {
@@ -707,9 +707,16 @@ export const appendMessageThunk =
       if (role === 'user') {
         const messageId = uuid()
         textBlock = createMainTextBlock(messageId, '', { status: MessageBlockStatus.SUCCESS })
+        const initialVersion: MessageVersion = {
+          id: uuid(),
+          content: '',
+          createdAt: new Date().toISOString()
+        }
         message = createMessage('user', topicId, assistantId, {
           id: messageId,
-          blocks: [textBlock.id]
+          blocks: [textBlock.id],
+          versions: [initialVersion],
+          activeVersionId: initialVersion.id
         })
       } else {
         // 仅当紧邻的上一条消息是用户消息时，用其 id 作为 askId

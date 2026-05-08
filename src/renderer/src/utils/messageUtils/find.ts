@@ -110,12 +110,67 @@ export const findFileBlocks = (message: Message): FileMessageBlock[] => {
 
 /**
  * Gets the concatenated content string from all MainTextMessageBlocks of a message, in order.
+ * 对于用户消息，优先使用版本管理中的生效版本内容。
  * @param message - The message object.
  * @returns The concatenated content string or an empty string if no text blocks are found.
  */
 export const getMainTextContent = (message: Message): string => {
+  // 对于用户消息，优先使用版本管理中的生效版本内容
+  if (message.role === 'user' && message.versions && message.activeVersionId) {
+    const activeVersion = message.versions.find(v => v.id === message.activeVersionId)
+    if (activeVersion) {
+      return activeVersion.content
+    }
+  }
+
   const textBlocks = findMainTextBlocks(message)
   return textBlocks.map((block) => block.content).join('\n\n')
+}
+
+// ========== 版本管理相关工具函数 ==========
+
+// 获取消息当前生效版本的内容
+export const getActiveMessageContent = (message: Message): string => {
+  // 只对用户消息进行版本管理
+  if (message.role !== 'user') {
+    return getMainTextContent(message)
+  }
+
+  // 如果有版本信息且指定了生效版本
+  if (message.versions && message.activeVersionId) {
+    const activeVersion = message.versions.find(v => v.id === message.activeVersionId)
+    if (activeVersion) {
+      return activeVersion.content
+    }
+  }
+
+  // 存量数据或无效版本信息时，从 blocks 获取
+  return getMainTextContent(message)
+}
+
+// 获取消息的版本列表，按创建时间正序排列
+export const getSortedVersions = (message: Message) => {
+  if (!message.versions || message.role !== 'user') {
+    return []
+  }
+  return [...message.versions].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+}
+
+// 获取当前生效版本的索引（从0开始）
+export const getActiveVersionIndex = (message: Message): number => {
+  if (!message.versions || message.role !== 'user' || !message.activeVersionId) {
+    return -1
+  }
+  const sortedVersions = getSortedVersions(message)
+  return sortedVersions.findIndex(v => v.id === message.activeVersionId)
+}
+
+// 获取版本总数
+export const getVersionCount = (message: Message): number => {
+  if (!message.versions || message.role !== 'user') {
+    return 0
+  }
+  return message.versions.length
 }
 
 /**
