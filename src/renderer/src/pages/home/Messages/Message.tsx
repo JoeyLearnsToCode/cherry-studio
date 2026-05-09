@@ -69,6 +69,7 @@ const MessageItem: FC<Props> = ({
   const deleteClickRef = React.useRef(false)
   const deleteConfirmTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const onDeleteRef = React.useRef<() => void>(() => {})
+  const onDeleteVersionRef = React.useRef<() => void>(() => {})
 
   const { t } = useTranslation()
   const { assistant, setModel } = useAssistant(message.assistantId)
@@ -112,7 +113,7 @@ const MessageItem: FC<Props> = ({
     }
   }, [deleteConfirmOpen, resetDeleteConfirm, startDeleteConfirmTimer])
 
-  const { contextMenuItems, hasSelection, onDelete } = useMessageMenuItems({
+  const { contextMenuItems, hasSelection, onDelete, onDeleteVersion } = useMessageMenuItems({
     message,
     assistant: assistant as Assistant,
     topic,
@@ -128,6 +129,7 @@ const MessageItem: FC<Props> = ({
     deleteClickRef
   })
   onDeleteRef.current = onDelete
+  onDeleteVersionRef.current = onDeleteVersion
 
   // 窗口失焦时关闭右键菜单
   useEffect(() => {
@@ -302,6 +304,7 @@ const MessageItem: FC<Props> = ({
   onUpdateUseful={onUpdateUseful}
                 deleteConfirmOpen={deleteConfirmOpen}
                 onToggleDeleteConfirm={handleDeleteConfirmClick}
+                onDeleteVersion={onDeleteVersion}
 />
             </MessageFooter>
           )}

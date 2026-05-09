@@ -418,7 +418,8 @@
       },
       "version": {
         "previous": "Previous version",
-        "next": "Next version"
+        "next": "Next version",
+        "deleteCurrent": "Delete current version"
       }
     },
     "multiple": {

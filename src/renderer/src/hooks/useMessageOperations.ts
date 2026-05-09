@@ -24,10 +24,10 @@ import {
   updateTranslationBlockThunk
 } from '@renderer/store/thunk/messageThunk'
 import type { Assistant, Model, Topic, TranslateLanguageCode } from '@renderer/types'
-import type { Message, MessageBlock, MessageVersion } from '@renderer/types/newMessage'
+import type { Message, MainTextMessageBlock, MessageBlock, MessageVersion } from '@renderer/types/newMessage'
 import { MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import { abortCompletion } from '@renderer/utils/abortController'
-import { getMainTextContent } from '@renderer/utils/messageUtils/find'
+import { getActiveVersionIndex, getMainTextContent, getSortedVersions } from '@renderer/utils/messageUtils/find'
 import { throttle } from 'lodash'
 import { useCallback } from 'react'
 import { v4 as uuidv4 } from 'uuid'
@@ -419,7 +419,7 @@ export function useMessageOperations(topic: Topic) {
             const matchedIndex = baseVersions.findIndex(v => normalizeContent(v.content) === normalizedNew)
 
             if (matchedIndex !== -1) {
-              // 切回已有版本：用新内容更新该版本（保持首尾空白一致），同步 block 内容
+              // 切回已有版本：用新内容更新该版本（保持首尾空白一致）
               const updatedVersions = [...baseVersions]
               updatedVersions[matchedIndex] = {
                 ...updatedVersions[matchedIndex],
@@ -429,12 +429,16 @@ export function useMessageOperations(topic: Topic) {
               messageUpdates.versions = updatedVersions
               messageUpdates.activeVersionId = updatedVersions[matchedIndex].id
 
-              // 同步 main_text block 内容为该版本内容
-              const mainTextBlockIdx = editedBlocks.findIndex(b => b.type === MessageBlockType.MAIN_TEXT)
-              if (mainTextBlockIdx !== -1) {
-                const block = editedBlocks[mainTextBlockIdx]
-                if ('content' in block) {
-                  editedBlocks[mainTextBlockIdx] = { ...block, content: newContent }
+              // 同步 blocksToUpdate / blocksToAdd 中的 main_text block 内容
+              const now = new Date().toISOString()
+              for (let i = 0; i < blocksToUpdate.length; i++) {
+                if (blocksToUpdate[i].type === MessageBlockType.MAIN_TEXT && 'content' in blocksToUpdate[i]) {
+                  blocksToUpdate[i] = { ...blocksToUpdate[i], content: newContent, updatedAt: now } as typeof blocksToUpdate[number]
+                }
+              }
+              for (let i = 0; i < blocksToAdd.length; i++) {
+                if (blocksToAdd[i].type === MessageBlockType.MAIN_TEXT && 'content' in blocksToAdd[i]) {
+                  blocksToAdd[i] = { ...blocksToAdd[i], content: newContent, updatedAt: now } as typeof blocksToAdd[number]
                 }
               }
             } else {
@@ -548,9 +552,78 @@ export function useMessageOperations(topic: Topic) {
     [dispatch, topic?.id]
   )
 
+  /**
+   * 删除用户消息的当前活跃版本。 / Deletes the currently active version of a user message.
+   * If only one version remains, deletes the entire message instead.
+   */
+  const deleteActiveVersion = useCallback(
+    async (messageId: string, traceId?: string, modelName?: string) => {
+      const state = store.getState()
+      const message = state.messages.entities[messageId]
+      if (!message || message.role !== 'user') return
+
+      const versions = message.versions || []
+      if (versions.length <= 1) {
+        // 只有一个版本，等同于删除整个消息
+        await dispatch(deleteSingleMessageThunk(topic.id, messageId))
+        window.api.trace.cleanHistory(topic.id, traceId || '', modelName)
+        return
+      }
+
+      const activeVersionId = message.activeVersionId
+      const remainingVersions = versions.filter((v) => v.id !== activeVersionId)
+
+      if (remainingVersions.length === 0) {
+        await dispatch(deleteSingleMessageThunk(topic.id, messageId))
+        window.api.trace.cleanHistory(topic.id, traceId || '', modelName)
+        return
+      }
+
+      // 切换到最近的版本（优先前一个，否则后一个）
+      const sortedVersions = getSortedVersions(message)
+      const activeIndex = getActiveVersionIndex(message)
+      const newActiveVersion = activeIndex > 0 ? sortedVersions[activeIndex - 1] : sortedVersions[activeIndex + 1]
+
+      if (!newActiveVersion) {
+        await dispatch(deleteSingleMessageThunk(topic.id, messageId))
+        window.api.trace.cleanHistory(topic.id, traceId || '', modelName)
+        return
+      }
+
+      // 更新主文本块内容
+      const mainTextBlockId = message.blocks.find((blockId) => {
+        const block = state.messageBlocks.entities[blockId]
+        return block?.type === MessageBlockType.MAIN_TEXT
+      })
+
+      let updatedBlock: MainTextMessageBlock | undefined
+      if (mainTextBlockId) {
+        const block = state.messageBlocks.entities[mainTextBlockId]
+        if (block && block.type === MessageBlockType.MAIN_TEXT) {
+          updatedBlock = {
+            ...block,
+            content: newActiveVersion.content,
+            updatedAt: new Date().toISOString()
+          } as MainTextMessageBlock
+        }
+      }
+
+      const messageUpdates: Partial<Message> & Pick<Message, 'id'> = {
+        id: messageId,
+        versions: remainingVersions,
+        activeVersionId: newActiveVersion.id,
+        updatedAt: new Date().toISOString()
+      }
+
+      await dispatch(updateMessageAndBlocksThunk(topic.id, messageUpdates, updatedBlock ? [updatedBlock] : []))
+    },
+    [dispatch, topic.id]
+  )
+
   return {
     displayCount,
     deleteMessage,
+    deleteActiveVersion,
     deleteGroupMessages,
     editMessage,
     resendMessage,

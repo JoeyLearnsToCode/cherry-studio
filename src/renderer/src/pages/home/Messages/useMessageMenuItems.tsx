@@ -36,11 +36,12 @@ import {
   findMainTextBlocks,
   findTranslationBlocks,
   findTranslationBlocksById,
-  getMainTextContent
+  getMainTextContent,
+  getVersionCount
 } from '@renderer/utils/messageUtils/find'
 import { MenuProps } from 'antd'
 import dayjs from 'dayjs'
-import { AtSign, Check, FilePenLine, Languages, ListChecks, MessageSquarePlus, Save, Split, ThumbsUp, Trash2, Upload } from 'lucide-react'
+import { AtSign, Check, FilePenLine, FileX2, Languages, ListChecks, MessageSquarePlus, Save, Split, ThumbsUp, Trash2, Upload } from 'lucide-react'
 import React, { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSelector } from 'react-redux'
@@ -86,6 +87,7 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
 
   const {
     deleteMessage,
+    deleteActiveVersion,
     resendMessage,
     regenerateAssistantMessage,
     getTranslationUpdater,
@@ -201,6 +203,10 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
   const onDelete = useCallback(async () => {
     deleteMessage(message.id, message.traceId, message.model?.name)
   }, [deleteMessage, message.id, message.traceId, message.model?.name])
+
+  const onDeleteVersion = useCallback(async () => {
+    deleteActiveVersion(message.id, message.traceId, message.model?.name)
+  }, [deleteActiveVersion, message.id, message.traceId, message.model?.name])
 
   const onDeleteWithConfirm = useCallback(async () => {
     const confirmed = await modalConfirm({
@@ -490,6 +496,8 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
     [t, translateLanguages, handleTranslate, hasTranslationBlocks, message.blocks, blockEntities, message.id, removeMessageBlock]
   )
 
+  const hasMultipleVersions = message.role === 'user' && getVersionCount(message) > 1
+
   const contextMenuItems = useMemo(
     () => [
       ...(message.role === 'user'
@@ -578,6 +586,21 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
               onToggleDeleteConfirm?.()
             }
           },
+      ...(deleteConfirmOpen && hasMultipleVersions
+        ? [
+            {
+              label: t('chat.message.version.deleteCurrent'),
+              key: 'delete-version',
+              icon: <FileX2 size={15} style={{ color: 'white' }} />,
+              style: { background: 'var(--color-error)', color: 'white', borderRadius: 4 },
+              onClick: () => {
+                if (deleteClickRef) deleteClickRef.current = false
+                onDeleteVersion()
+                onToggleDeleteConfirm?.()
+              }
+            }
+          ]
+        : []),
       { type: 'divider' as const },
       ...moreMenuItems,
       ...(enableDeveloperMode && message.traceId
@@ -625,6 +648,7 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
     onEdit,
     onDelete,
     onDeleteWithConfirm,
+    onDeleteVersion,
     onRegenerate,
     onRegenerateWithConfirm,
     onRegenerateWithSameModel,

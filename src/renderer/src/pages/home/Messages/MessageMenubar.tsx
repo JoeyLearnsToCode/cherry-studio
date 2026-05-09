@@ -5,8 +5,9 @@ import { TraceIcon } from '@renderer/trace/pages/Component'
 import type { Assistant, Model, Topic } from '@renderer/types'
 import { type Message } from '@renderer/types/newMessage'
 import { classNames } from '@renderer/utils'
+import { getVersionCount } from '@renderer/utils/messageUtils/find'
 import { Dropdown, Popconfirm, Tooltip } from 'antd'
-import { AtSign, Check, Languages, Menu, MessageSquarePlus, ThumbsUp } from 'lucide-react'
+import { AtSign, Check, FileX2, Languages, Menu, MessageSquarePlus, ThumbsUp } from 'lucide-react'
 import { FC, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -29,6 +30,7 @@ interface Props {
   onUpdateUseful?: (msgId: string) => void
   deleteConfirmOpen?: boolean
   onToggleDeleteConfirm?: () => void
+  onDeleteVersion?: () => void
 }
 
 const MessageMenubar: FC<Props> = (props) => {
@@ -37,7 +39,8 @@ const MessageMenubar: FC<Props> = (props) => {
     isLastMessage,
     isAssistantMessage,
     deleteConfirmOpen = false,
-    onToggleDeleteConfirm
+    onToggleDeleteConfirm,
+    onDeleteVersion
   } = props
   const { t } = useTranslation()
   const { isBubbleStyle } = useMessageStyle()
@@ -59,6 +62,7 @@ const MessageMenubar: FC<Props> = (props) => {
   } = useMessageMenuItems(props)
 
   const isUserMessage = message.role === 'user'
+  const hasMultipleVersions = isUserMessage && getVersionCount(message) > 1
   const softHoverBg = isBubbleStyle && !isLastMessage
   const showMessageTokens = !isBubbleStyle
   const isUserBubbleStyleMessage = isBubbleStyle && isUserMessage
@@ -161,23 +165,40 @@ const MessageMenubar: FC<Props> = (props) => {
             </ActionButton>
           </Tooltip>
         )}
-<Tooltip title={t('common.delete')} mouseEnterDelay={1}>
-  <ActionButton
-    className="message-action-button"
-    onClick={(e) => {
-      e.stopPropagation()
-      if (deleteConfirmOpen) {
-        onDelete()
-        onToggleDeleteConfirm?.()
-      } else {
-        onToggleDeleteConfirm?.()
-      }
-    }}
-    $deleteConfirm={deleteConfirmOpen}
-    $softHoverBg={softHoverBg}>
-    <DeleteIcon size={15} />
-  </ActionButton>
-</Tooltip>
+<DeleteButtonWrapper>
+  <Tooltip title={t('common.delete')} mouseEnterDelay={1}>
+    <ActionButton
+      className="message-action-button"
+      onClick={(e) => {
+        e.stopPropagation()
+        if (deleteConfirmOpen) {
+          onDelete()
+          onToggleDeleteConfirm?.()
+        } else {
+          onToggleDeleteConfirm?.()
+        }
+      }}
+      $deleteConfirm={deleteConfirmOpen}
+      $softHoverBg={softHoverBg}>
+      <DeleteIcon size={15} />
+    </ActionButton>
+  </Tooltip>
+  {deleteConfirmOpen && hasMultipleVersions && (
+    <Tooltip title={t('chat.message.version.deleteCurrent')} mouseEnterDelay={0.5}>
+      <ActionButton
+        className="message-action-button"
+        onClick={(e) => {
+          e.stopPropagation()
+          onDeleteVersion?.()
+          onToggleDeleteConfirm?.()
+        }}
+        $deleteVersionConfirm={deleteConfirmOpen}
+        $softHoverBg={softHoverBg}>
+        <FileX2 size={15} />
+      </ActionButton>
+    </Tooltip>
+  )}
+</DeleteButtonWrapper>
         {message.traceId && (
           <Tooltip title={t('trace.label')} mouseEnterDelay={0.8}>
             <ActionButton className="message-action-button" onClick={() => handleTraceUserMessage()}>
@@ -203,6 +224,19 @@ const MessageMenubar: FC<Props> = (props) => {
   )
 }
 
+const DeleteButtonWrapper = styled.div`
+  position: relative;
+
+  & > :nth-child(2) {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    margin-top: 2px;
+  }
+`
+
 const MenusBar = styled.div`
   display: flex;
   flex-direction: row;
@@ -215,7 +249,7 @@ const MenusBar = styled.div`
   }
 `
 
-const ActionButton = styled.div<{ $softHoverBg?: boolean; $deleteConfirm?: boolean }>`
+const ActionButton = styled.div<{ $softHoverBg?: boolean; $deleteConfirm?: boolean; $deleteVersionConfirm?: boolean }>`
   cursor: pointer;
   border-radius: 8px;
   display: flex;
@@ -225,15 +259,18 @@ const ActionButton = styled.div<{ $softHoverBg?: boolean; $deleteConfirm?: boole
   width: 26px;
   height: 26px;
   transition: all 0.2s ease;
-  background-color: ${(props) => (props.$deleteConfirm ? 'var(--color-error)' : 'transparent')};
+  background-color: ${(props) =>
+    props.$deleteConfirm || props.$deleteVersionConfirm ? 'var(--color-error)' : 'transparent'};
   .anticon,
   .iconfont {
     cursor: pointer;
     font-size: 14px;
-    color: ${(props) => (props.$deleteConfirm ? 'white' : 'var(--color-icon)')};
+    color: ${(props) =>
+      props.$deleteConfirm || props.$deleteVersionConfirm ? 'white' : 'var(--color-icon)'};
   }
   .lucide {
-    color: ${(props) => (props.$deleteConfirm ? 'white' : 'var(--color-icon)')};
+    color: ${(props) =>
+      props.$deleteConfirm || props.$deleteVersionConfirm ? 'white' : 'var(--color-icon)'};
   }
   .icon-at {
     font-size: 16px;

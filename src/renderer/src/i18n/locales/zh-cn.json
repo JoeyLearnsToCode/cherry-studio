@@ -418,7 +418,8 @@
       },
       "version": {
         "previous": "上一个版本",
-        "next": "下一个版本"
+        "next": "下一个版本",
+        "deleteCurrent": "删除当前版本"
       }
     },
     "multiple": {

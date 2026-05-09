@@ -418,7 +418,8 @@
       },
       "version": {
         "previous": "前のバージョン",
-        "next": "次のバージョン"
+        "next": "次のバージョン",
+        "deleteCurrent": "現在のバージョンを削除"
       }
     },
     "multiple": {
