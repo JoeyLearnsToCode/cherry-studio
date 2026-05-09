@@ -1,7 +1,6 @@
 import { loggerService } from '@logger'
 import db from '@renderer/databases'
 import { fetchChatCompletion } from '@renderer/services/ApiService'
-import { EventEmitter, EVENT_NAMES } from '@renderer/services/EventService'
 import FileManager from '@renderer/services/FileManager'
 import { BlockManager } from '@renderer/services/messageStreaming/BlockManager'
 import { createCallbacks } from '@renderer/services/messageStreaming/callbacks'
