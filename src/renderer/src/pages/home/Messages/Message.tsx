@@ -65,6 +65,11 @@ const MessageItem: FC<Props> = ({
   onUpdateUseful,
   isGroupContextMessage
 }) => {
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false)
+  const deleteClickRef = React.useRef(false)
+  const deleteConfirmTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const onDeleteRef = React.useRef<() => void>(() => {})
+
   const { t } = useTranslation()
   const { assistant, setModel } = useAssistant(message.assistantId)
   const { isMultiSelectMode } = useChatContext(topic)
@@ -77,7 +82,37 @@ const MessageItem: FC<Props> = ({
   const isEditing = editingMessageId === message.id
   const [contextMenuOpen, setContextMenuOpen] = React.useState(false)
 
-  const { contextMenuItems, hasSelection } = useMessageMenuItems({
+  const resetDeleteConfirm = React.useCallback(() => {
+    if (deleteConfirmTimerRef.current) {
+      clearTimeout(deleteConfirmTimerRef.current)
+      deleteConfirmTimerRef.current = null
+    }
+    setDeleteConfirmOpen(false)
+  }, [])
+
+  const startDeleteConfirmTimer = React.useCallback(() => {
+    if (deleteConfirmTimerRef.current) {
+      clearTimeout(deleteConfirmTimerRef.current)
+    }
+    deleteConfirmTimerRef.current = setTimeout(() => {
+      setDeleteConfirmOpen(false)
+      deleteConfirmTimerRef.current = null
+    }, 3000)
+  }, [])
+
+  const handleDeleteConfirmClick = React.useCallback(() => {
+    if (deleteConfirmOpen) {
+      // 第二次点击：执行删除并重置
+      onDeleteRef.current()
+      resetDeleteConfirm()
+    } else {
+      // 第一次点击：进入确认模式
+      setDeleteConfirmOpen(true)
+      startDeleteConfirmTimer()
+    }
+  }, [deleteConfirmOpen, resetDeleteConfirm, startDeleteConfirmTimer])
+
+  const { contextMenuItems, hasSelection, onDelete } = useMessageMenuItems({
     message,
     assistant: assistant as Assistant,
     topic,
@@ -87,8 +122,12 @@ const MessageItem: FC<Props> = ({
     isLastMessage: index === 0 || !!isGrouped,
     isAssistantMessage: message.role === 'assistant',
     messageContainerRef: messageContainerRef as React.RefObject<HTMLDivElement>,
-    onUpdateUseful
+    onUpdateUseful,
+    deleteConfirmOpen,
+    onToggleDeleteConfirm: handleDeleteConfirmClick,
+    deleteClickRef
   })
+  onDeleteRef.current = onDelete
 
   useEffect(() => {
     if (isEditing && messageContainerRef.current) {
@@ -242,19 +281,21 @@ const MessageItem: FC<Props> = ({
               $isLastMessage={isLastMessage}
               $messageStyle={messageStyle}
               onClick={(e) => e.stopPropagation()}>
-              <MessageMenubar
-                message={message}
-                assistant={assistant as Assistant}
-                model={model}
-                index={index}
-                topic={topic}
-                isLastMessage={isLastMessage}
-                isAssistantMessage={isAssistantMessage}
-                isGrouped={isGrouped}
-                messageContainerRef={messageContainerRef as React.RefObject<HTMLDivElement>}
-                setModel={setModel}
-                onUpdateUseful={onUpdateUseful}
-              />
+<MessageMenubar
+  message={message}
+  assistant={assistant as Assistant}
+  model={model}
+  index={index}
+  topic={topic}
+  isLastMessage={isLastMessage}
+  isAssistantMessage={isAssistantMessage}
+  isGrouped={isGrouped}
+  messageContainerRef={messageContainerRef as React.RefObject<HTMLDivElement>}
+  setModel={setModel}
+  onUpdateUseful={onUpdateUseful}
+                deleteConfirmOpen={deleteConfirmOpen}
+                onToggleDeleteConfirm={handleDeleteConfirmClick}
+/>
             </MessageFooter>
           )}
         </>
@@ -273,6 +314,11 @@ const MessageItem: FC<Props> = ({
             if (open && hasSelection()) {
               // 有选中文本时，不打开消息右键菜单
               setContextMenuOpen(false)
+              return
+            }
+            if (!open && deleteClickRef.current) {
+              deleteClickRef.current = false
+              setTimeout(() => setContextMenuOpen(true), 50)
               return
             }
             setContextMenuOpen(open)
