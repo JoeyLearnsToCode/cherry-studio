@@ -279,7 +279,7 @@ export const initialState: SettingsState = {
   },
   codeShowLineNumbers: false,
   codeCollapsible: false,
-  codeWrappable: false,
+  codeWrappable: true,
   codeImageTools: false,
   mathEngine: 'KaTeX',
   mathEnableSingleDollar: true,
