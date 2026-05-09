@@ -364,8 +364,8 @@ const Topics: FC<Props> = ({ assistant: _assistant, activeTopic, setActiveTopic,
               const newTopic = getDefaultTopic(assistant.id)
               newTopic.name = topic.name
 
-              // 添加新话题到 Redux store
-              addTopic(newTopic)
+              // 添加新话题到 Redux store，插入到原话题紧邻上方
+              addTopic(newTopic, topic.id)
 
               // 克隆消息到新话题
               const success = await store.dispatch(
