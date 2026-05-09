@@ -109,10 +109,12 @@ const ImageBlock: React.FC<Props> = ({ block, isSingle = false }) => {
 
   // 图片本地化兜底：仅在打开会话时执行（seenStreaming === false）
   // 流式响应期间由 imageCallbacks.onImageGenerated 独占处理，避免重复下载
+  // _localizing 标志确保回调下载期间 useEffect 不并行触发
   useEffect(() => {
     if (localizeAttempted.current) return
     if (block.status !== MessageBlockStatus.SUCCESS) return
     if (seenStreaming.current) return
+    if (block.metadata?._localizing) return
 
     const { metadata } = block
     const generateImages = metadata?.generateImageResponse?.images
