@@ -16,7 +16,7 @@ import { selectMessagesForTopic } from '@renderer/store/newMessage'
 import type { Topic, Assistant, Model } from '@renderer/types'
 import { type Message, MessageBlockType } from '@renderer/types/newMessage'
 import { Button, Tooltip } from 'antd'
-import { AtSign } from 'lucide-react'
+import { AtSign, MessageSquarePlus } from 'lucide-react'
 import { FC, memo, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -71,6 +71,12 @@ const MessageGroupMenuBar: FC<Props> = ({
     if (!selectedModel) return
     appendAssistantResponse(selectedMessage, selectedModel, { ...assistant, model: selectedModel })
   }, [messages, selectMessageId, mentionModelFilter, appendAssistantResponse, assistant])
+
+  const onRegenerateWithSameModel = useCallback(async () => {
+    const selectedMessage = messages[messages.length - 1]
+    if (!selectedMessage || !selectedMessage.model) return
+    appendAssistantResponse(selectedMessage, selectedMessage.model, { ...assistant, model: selectedMessage.model })
+  }, [messages, selectMessageId, appendAssistantResponse, assistant])
 
   const handleDeleteGroup = async () => {
     const askId = messages[0]?.askId
@@ -129,6 +135,14 @@ const MessageGroupMenuBar: FC<Props> = ({
         )}
         {multiModelMessageStyle === 'grid' && <MessageGroupSettings />}
       </HStack>
+      <Tooltip title={t('message.regenerate.same_model')} mouseEnterDelay={0.5}>
+        <Button
+          type="text"
+          size="small"
+          icon={<MessageSquarePlus size={15} />}
+          onClick={onRegenerateWithSameModel}
+        />
+      </Tooltip>
       <Tooltip title={t('message.mention.title')} mouseEnterDelay={0.5}>
         <Button type="text" size="small" icon={<AtSign size={15} />} onClick={onSwitchModel} />
       </Tooltip>

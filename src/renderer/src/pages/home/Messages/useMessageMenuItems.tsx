@@ -40,7 +40,7 @@ import {
 } from '@renderer/utils/messageUtils/find'
 import { MenuProps } from 'antd'
 import dayjs from 'dayjs'
-import { AtSign, Check, FilePenLine, Languages, ListChecks, Save, Split, ThumbsUp, Trash2, Upload } from 'lucide-react'
+import { AtSign, Check, FilePenLine, Languages, ListChecks, MessageSquarePlus, Save, Split, ThumbsUp, Trash2, Upload } from 'lucide-react'
 import React, { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSelector } from 'react-redux'
@@ -241,6 +241,11 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
     if (!selectedModel) return
     appendAssistantResponse(message, selectedModel, { ...assistant, model: selectedModel })
   }, [appendAssistantResponse, assistant, mentionModelFilter, message, model])
+
+  const onRegenerateWithSameModel = useCallback(async () => {
+    if (!model) return
+    appendAssistantResponse(message, model, { ...assistant, model })
+  }, [appendAssistantResponse, assistant, message, model])
 
   const onRespondToUserMessage = useCallback(async () => {
     const selectedModel = await SelectModelPopup.show({ model, filter: userMessageModelFilter })
@@ -518,6 +523,12 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
               onClick: onRegenerate
             },
             {
+              label: t('message.regenerate.same_model'),
+              key: 'regenerate-same-model',
+              icon: <MessageSquarePlus size={15} />,
+              onClick: onRegenerateWithSameModel
+            },
+            {
               label: t('message.mention.title'),
               key: 'mention-assistant',
               icon: <AtSign size={15} />,
@@ -594,6 +605,7 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
     onDeleteWithConfirm,
     onRegenerate,
     onRegenerateWithConfirm,
+    onRegenerateWithSameModel,
     onNewBranch,
     onMentionModel,
     onRespondToUserMessage,

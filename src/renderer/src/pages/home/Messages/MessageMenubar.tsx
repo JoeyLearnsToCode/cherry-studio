@@ -6,7 +6,7 @@ import type { Assistant, Model, Topic } from '@renderer/types'
 import { type Message } from '@renderer/types/newMessage'
 import { classNames } from '@renderer/utils'
 import { Dropdown, Popconfirm, Tooltip } from 'antd'
-import { AtSign, Check, Languages, Menu, ThumbsUp } from 'lucide-react'
+import { AtSign, Check, Languages, Menu, MessageSquarePlus, ThumbsUp } from 'lucide-react'
 import { FC, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -42,6 +42,7 @@ const MessageMenubar: FC<Props> = (props) => {
     onEdit,
     onDelete,
     onRegenerate,
+    onRegenerateWithSameModel,
     onMentionModel,
     onRespondToUserMessage,
     onUseful,
@@ -99,6 +100,16 @@ const MessageMenubar: FC<Props> = (props) => {
           <Tooltip title={t('common.regenerate')} mouseEnterDelay={0.8}>
             <ActionButton className="message-action-button" onClick={onRegenerate} $softHoverBg={softHoverBg}>
               <RefreshIcon size={15} />
+            </ActionButton>
+          </Tooltip>
+        )}
+        {isAssistantMessage && (
+          <Tooltip title={t('message.regenerate.same_model')} mouseEnterDelay={0.8}>
+            <ActionButton
+              className="message-action-button"
+              onClick={onRegenerateWithSameModel}
+              $softHoverBg={softHoverBg}>
+              <MessageSquarePlus size={15} />
             </ActionButton>
           </Tooltip>
         )}
