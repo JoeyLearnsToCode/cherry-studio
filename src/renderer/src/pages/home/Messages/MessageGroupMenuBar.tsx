@@ -135,6 +135,9 @@ const MessageGroupMenuBar: FC<Props> = ({
         )}
         {multiModelMessageStyle === 'grid' && <MessageGroupSettings />}
       </HStack>
+      <Tooltip title={t('message.mention.title')} mouseEnterDelay={0.5}>
+        <Button type="text" size="small" icon={<AtSign size={15} />} onClick={onSwitchModel} />
+      </Tooltip>
       <Tooltip title={t('message.regenerate.same_model')} mouseEnterDelay={0.5}>
         <Button
           type="text"
@@ -142,9 +145,6 @@ const MessageGroupMenuBar: FC<Props> = ({
           icon={<MessageSquarePlus size={15} />}
           onClick={onRegenerateWithSameModel}
         />
-      </Tooltip>
-      <Tooltip title={t('message.mention.title')} mouseEnterDelay={0.5}>
-        <Button type="text" size="small" icon={<AtSign size={15} />} onClick={onSwitchModel} />
       </Tooltip>
       <Button
         type="text"

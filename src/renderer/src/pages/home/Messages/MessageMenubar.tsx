@@ -30,6 +30,7 @@ interface Props {
   onUpdateUseful?: (msgId: string) => void
   deleteConfirmOpen?: boolean
   onToggleDeleteConfirm?: () => void
+  onResetDeleteConfirm?: () => void
   onDeleteVersion?: () => void
 }
 
@@ -40,6 +41,7 @@ const MessageMenubar: FC<Props> = (props) => {
     isAssistantMessage,
     deleteConfirmOpen = false,
     onToggleDeleteConfirm,
+    onResetDeleteConfirm,
     onDeleteVersion
   } = props
   const { t } = useTranslation()
@@ -114,19 +116,19 @@ const MessageMenubar: FC<Props> = (props) => {
           </Tooltip>
         )}
         {isAssistantMessage && (
+          <Tooltip title={t('message.mention.title')} mouseEnterDelay={0.8}>
+            <ActionButton className="message-action-button" onClick={onMentionModel} $softHoverBg={softHoverBg}>
+              <AtSign size={15} />
+            </ActionButton>
+          </Tooltip>
+        )}
+        {isAssistantMessage && (
           <Tooltip title={t('message.regenerate.same_model')} mouseEnterDelay={0.8}>
             <ActionButton
               className="message-action-button"
               onClick={onRegenerateWithSameModel}
               $softHoverBg={softHoverBg}>
               <MessageSquarePlus size={15} />
-            </ActionButton>
-          </Tooltip>
-        )}
-        {isAssistantMessage && (
-          <Tooltip title={t('message.mention.title')} mouseEnterDelay={0.8}>
-            <ActionButton className="message-action-button" onClick={onMentionModel} $softHoverBg={softHoverBg}>
-              <AtSign size={15} />
             </ActionButton>
           </Tooltip>
         )}
@@ -190,7 +192,7 @@ const MessageMenubar: FC<Props> = (props) => {
         onClick={(e) => {
           e.stopPropagation()
           onDeleteVersion?.()
-          onToggleDeleteConfirm?.()
+          onResetDeleteConfirm?.()
         }}
         $deleteVersionConfirm={deleteConfirmOpen}
         $softHoverBg={softHoverBg}>

@@ -59,6 +59,7 @@ interface UseMessageMenuItemsProps {
   onUpdateUseful?: (msgId: string) => void
   deleteConfirmOpen?: boolean
   onToggleDeleteConfirm?: () => void
+  onResetDeleteConfirm?: () => void
   deleteClickRef?: React.MutableRefObject<boolean>
 }
 
@@ -75,6 +76,7 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
     onUpdateUseful,
     deleteConfirmOpen = false,
     onToggleDeleteConfirm,
+    onResetDeleteConfirm,
     deleteClickRef
   } = props
 
@@ -537,16 +539,16 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
               onClick: onRegenerate
             },
             {
-              label: t('message.regenerate.same_model'),
-              key: 'regenerate-same-model',
-              icon: <MessageSquarePlus size={15} />,
-              onClick: onRegenerateWithSameModel
-            },
-            {
               label: t('message.mention.title'),
               key: 'mention-assistant',
               icon: <AtSign size={15} />,
               onClick: onMentionModel
+            },
+            {
+              label: t('message.regenerate.same_model'),
+              key: 'regenerate-same-model',
+              icon: <MessageSquarePlus size={15} />,
+              onClick: onRegenerateWithSameModel
             }
           ]
         : []),
@@ -596,7 +598,7 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
               onClick: () => {
                 if (deleteClickRef) deleteClickRef.current = false
                 onDeleteVersion()
-                onToggleDeleteConfirm?.()
+                onResetDeleteConfirm?.()
               }
             }
           ]
@@ -631,6 +633,7 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
       isGrouped,
       onUseful,
       onDelete,
+      onResetDeleteConfirm,
       onToggleDeleteConfirm,
       deleteConfirmOpen,
       moreMenuItems,

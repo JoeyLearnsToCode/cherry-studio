@@ -126,6 +126,7 @@ const MessageItem: FC<Props> = ({
     onUpdateUseful,
     deleteConfirmOpen,
     onToggleDeleteConfirm: handleDeleteConfirmClick,
+    onResetDeleteConfirm: resetDeleteConfirm,
     deleteClickRef
   })
   onDeleteRef.current = onDelete
@@ -304,6 +305,7 @@ const MessageItem: FC<Props> = ({
   onUpdateUseful={onUpdateUseful}
                 deleteConfirmOpen={deleteConfirmOpen}
                 onToggleDeleteConfirm={handleDeleteConfirmClick}
+                onResetDeleteConfirm={resetDeleteConfirm}
                 onDeleteVersion={onDeleteVersion}
 />
             </MessageFooter>
@@ -376,10 +378,9 @@ const MessageContentContainer = styled(Scrollbar)`
   overflow-y: auto;
 `
 
-const MessageFooter = styled.div<{ $isLastMessage: boolean; $messageStyle: 'plain' | 'bubble' }>`
+const MessageFooter = styled.div`
   display: flex;
-  flex-direction: ${({ $isLastMessage, $messageStyle }) =>
-    $isLastMessage && $messageStyle === 'plain' ? 'row-reverse' : 'row'};
+  flex-direction: row;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
