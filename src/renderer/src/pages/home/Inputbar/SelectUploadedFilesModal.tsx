@@ -1,31 +1,41 @@
 import FileManager from '@renderer/services/FileManager'
-import { FileMetadata, FileTypes } from '@renderer/types'
+import { FileType, FileTypes } from '@renderer/types'
 import { formatFileSize } from '@renderer/utils'
 import { Checkbox, Col, Empty, Image, Modal, Row, Spin } from 'antd'
 import { useLiveQuery } from 'dexie-react-hooks'
 import db from '@renderer/databases'
-import { FC, useCallback, useMemo, useState } from 'react'
+import { FC, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
 interface Props {
   open: boolean
   onClose: () => void
-  onConfirm: (files: FileMetadata[]) => void
+  onConfirm: (files: FileType[]) => void
   extensions: string[]
   couldAddImageFile: boolean
+  currentFiles: FileType[]
 }
 
 const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']
 
 const isImageExt = (ext: string) => IMAGE_EXTS.includes(ext.toLowerCase())
 
-const SelectUploadedFilesModal: FC<Props> = ({ open, onClose, onConfirm, extensions, couldAddImageFile }) => {
+const SelectUploadedFilesModal: FC<Props> = ({ open, onClose, onConfirm, extensions, couldAddImageFile, currentFiles }) => {
   const { t } = useTranslation()
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  // selectedIds 有序数组：按选择顺序维护，取消勾选时移除
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+
+  // 每次弹窗打开时，根据 currentFiles 初始化已选中的文件ID
+  useEffect(() => {
+    if (open) {
+      setSelectedIds(currentFiles.filter((f) => f._alreadyUploaded).map((f) => f.id))
+    }
+  }, [open])
   const [previewingId, setPreviewingId] = useState<string | null>(null)
 
-  const allFiles = useLiveQuery<FileMetadata[]>(() => db.files.orderBy('created_at').reverse().toArray(), [])
+  const allFiles = useLiveQuery<FileType[]>(() => db.files.orderBy('created_at').reverse().toArray(), [])
 
   const filteredFiles = useMemo(() => {
     if (!allFiles) return []
@@ -41,27 +51,48 @@ const SelectUploadedFilesModal: FC<Props> = ({ open, onClose, onConfirm, extensi
   const imageFiles = useMemo(() => filteredFiles.filter((f) => isImageExt(f.ext)), [filteredFiles])
   const otherFiles = useMemo(() => filteredFiles.filter((f) => !isImageExt(f.ext)), [filteredFiles])
 
+  const fileMap = useMemo(() => {
+    const map = new Map<string, FileType>()
+    filteredFiles.forEach((f) => map.set(f.id, f))
+    return map
+  }, [filteredFiles])
+
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
+      const idx = prev.indexOf(id)
+      if (idx >= 0) {
+        return prev.filter((_, i) => i !== idx)
+      }
+      return [...prev, id]
     })
   }, [])
 
   const handleConfirm = useCallback(() => {
-    const selected = filteredFiles.filter((f) => selectedIds.has(f.id))
-    onConfirm(selected)
-    setSelectedIds(new Set())
-  }, [filteredFiles, selectedIds, onConfirm])
+    const selectedIdSet = new Set(selectedIds)
+    // 1. 保留 currentFiles 中非已上传文件（本地文件）+ 仍在选中列表的已上传文件
+    const keptFiles = currentFiles.filter((f) => !f._alreadyUploaded || selectedIdSet.has(f.id))
+    // 2. 找出新选中的（在 selectedIds 中但不在原 currentFiles 已上传部分中的）
+    const existingUploadedIds = new Set(currentFiles.filter((f) => f._alreadyUploaded).map((f) => f.id))
+    const newlySelectedIds = selectedIds.filter((id) => !existingUploadedIds.has(id))
+    const newlySelectedFiles: FileType[] = newlySelectedIds
+      .map((id) => fileMap.get(id))
+      .filter((f): f is FileType => !!f)
+      .map((f) => ({
+        ...f,
+        path: FileManager.getFilePath(f),
+        _alreadyUploaded: true
+      }))
+    // 3. 追加新选文件到末尾
+    onConfirm([...keptFiles, ...newlySelectedFiles])
+    setSelectedIds([])
+  }, [selectedIds, currentFiles, fileMap, onConfirm])
 
   const handleCancel = useCallback(() => {
-    setSelectedIds(new Set())
+    setSelectedIds([])
     onClose()
   }, [onClose])
 
-  const selectedCount = selectedIds.size
+  const selectedCount = selectedIds.length
 
   return (
     <Modal
@@ -94,7 +125,7 @@ const SelectUploadedFilesModal: FC<Props> = ({ open, onClose, onConfirm, extensi
                   {imageFiles.map((file) => (
                     <Col key={file.id} xs={8} sm={6} md={4}>
                       <ImageCard
-                        $selected={selectedIds.has(file.id)}
+                        $selected={selectedIds.includes(file.id)}
                         onClick={(e) => {
                           if (e.ctrlKey || e.metaKey) {
                             toggleSelect(file.id)
@@ -126,7 +157,7 @@ const SelectUploadedFilesModal: FC<Props> = ({ open, onClose, onConfirm, extensi
                             e.stopPropagation()
                             toggleSelect(file.id)
                           }}>
-                          <Checkbox checked={selectedIds.has(file.id)} />
+                          <Checkbox checked={selectedIds.includes(file.id)} />
                         </CheckboxOverlay>
                       </ImageCard>
                     </Col>
@@ -137,9 +168,9 @@ const SelectUploadedFilesModal: FC<Props> = ({ open, onClose, onConfirm, extensi
             {otherFiles.length > 0 && (
               <Section>
                 {otherFiles.map((file) => (
-                  <FileRow key={file.id} $selected={selectedIds.has(file.id)} onClick={() => toggleSelect(file.id)}>
+                  <FileRow key={file.id} $selected={selectedIds.includes(file.id)} onClick={() => toggleSelect(file.id)}>
                     <FileRowLeft>
-                      <Checkbox checked={selectedIds.has(file.id)} />
+                      <Checkbox checked={selectedIds.includes(file.id)} />
                       <FileName>{FileManager.formatFileName(file)}</FileName>
                     </FileRowLeft>
                     <FileMeta>
@@ -239,7 +270,8 @@ const FileRow = styled.div<{ $selected: boolean }>`
   transition: background 0.15s ease, border-color 0.15s ease;
 
   &:hover {
-    background: var(--color-background-soft);
+    background: var(--color-background-soft)
+    ;
   }
 `
 

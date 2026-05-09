@@ -75,7 +75,7 @@ const MessageItem: FC<Props> = ({
   const { assistant, setModel } = useAssistant(message.assistantId)
   const { isMultiSelectMode } = useChatContext(topic)
   const model = useModel(getMessageModelId(message), message.model?.provider) || message.model
-  const { messageFont, fontSize, messageStyle, showMessageOutline } = useSettings()
+  const { messageFont, fontSize, showMessageOutline } = useSettings()
   const { editMessageBlocks, resendUserMessageWithEdit, editMessage } = useMessageOperations(topic)
   const messageContainerRef = useRef<HTMLDivElement>(null)
   const { editingMessageId, startEditing, stopEditing } = useMessageEditing()
@@ -288,8 +288,6 @@ const MessageItem: FC<Props> = ({
           {showMenubar && (
             <MessageFooter
               className="MessageFooter"
-              $isLastMessage={isLastMessage}
-              $messageStyle={messageStyle}
               onClick={(e) => e.stopPropagation()}>
 <MessageMenubar
   message={message}

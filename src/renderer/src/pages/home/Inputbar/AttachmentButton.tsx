@@ -1,5 +1,4 @@
-import FileManager from '@renderer/services/FileManager'
-import { FileMetadata, FileType } from '@renderer/types'
+import { FileType } from '@renderer/types'
 import { filterSupportedFiles } from '@renderer/utils/file'
 import { Dropdown, Tooltip } from 'antd'
 import { FileUp, Paperclip, Upload } from 'lucide-react'
@@ -80,18 +79,11 @@ const AttachmentButton: FC<Props> = ({
   }, [onSelectFile])
 
   const handleSelectUploadedFiles = useCallback(
-    (selectedFiles: FileMetadata[]) => {
-      // Rebuild path using FileManager.getFilePath() since db.files may have stale paths,
-      // and mark as _alreadyUploaded to skip re-uploading
-      const filesWithFixedPath: FileType[] = selectedFiles.map((f) => ({
-        ...f,
-        path: FileManager.getFilePath(f),
-        _alreadyUploaded: true
-      }))
-      setFiles([...files, ...filesWithFixedPath])
+    (updatedFiles: FileType[]) => {
+      setFiles(updatedFiles)
       setShowUploadedFilesModal(false)
     },
-    [files, setFiles]
+    [setFiles]
   )
 
   useImperativeHandle(ref, () => ({
@@ -144,6 +136,7 @@ const AttachmentButton: FC<Props> = ({
         onConfirm={handleSelectUploadedFiles}
         extensions={extensions}
         couldAddImageFile={couldAddImageFile}
+        currentFiles={files}
       />
     </>
   )
