@@ -138,7 +138,17 @@ const ModelsContainer = styled(Scrollbar)<{ $displayMode: DisplayMode }>`
   padding: 0 8px;
 
   &::-webkit-scrollbar {
-    display: none;
+    display: block;
+    height: 6px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--color-border);
+    border-radius: 3px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background-color: transparent;
   }
 
   /* Card mode styles */
