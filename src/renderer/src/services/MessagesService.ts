@@ -9,7 +9,7 @@ import { messageBlocksSelectors, removeManyBlocks } from '@renderer/store/messag
 import { selectMessagesForTopic } from '@renderer/store/newMessage'
 import type { Assistant, FileMetadata, Model, Topic, Usage } from '@renderer/types'
 import { FileTypes } from '@renderer/types'
-import type { Message, MessageBlock } from '@renderer/types/newMessage'
+import type { Message, MessageBlock, MessageVersion } from '@renderer/types/newMessage'
 import { AssistantMessageStatus, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import { uuid } from '@renderer/utils'
 import { getTitleFromString } from '@renderer/utils/export'
@@ -143,6 +143,14 @@ export function getUserMessage({
     })
   }
 
+  // 为用户消息初始化版本信息
+  const now = new Date().toISOString()
+  const initialVersion: MessageVersion = {
+    id: uuid(),
+    content: content || '',
+    createdAt: now
+  }
+
   // 直接在createMessage中传入id
   const message = createMessage(
     'user',
@@ -153,11 +161,11 @@ export function getUserMessage({
       modelId: model?.id,
       model: model,
       blocks: blockIds,
-      // 移除knowledgeBaseIds
       mentions,
-      // 移除mcp
       type,
-      usage
+      usage,
+      versions: [initialVersion],
+      activeVersionId: initialVersion.id
     }
   )
 

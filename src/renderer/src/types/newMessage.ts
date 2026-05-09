@@ -159,6 +159,14 @@ export enum AssistantMessageStatus {
   PAUSED = 'paused',
   ERROR = 'error'
 }
+// 消息版本记录 - 用于跟踪用户消息的编辑历史
+export interface MessageVersion {
+  id: string           // 版本唯一标识
+  content: string      // 版本内容（纯文本，不含blocks结构）
+  createdAt: string    // 版本创建时间
+  updatedAt?: string   // 版本更新时间（编辑时）
+}
+
 // Message 核心类型 - 包含元数据和块集合
 export type Message = {
   id: string
@@ -193,6 +201,10 @@ export type Message = {
 
   // 跟踪Id
   traceId?: string
+
+  // 版本管理（仅用户消息）
+  versions?: MessageVersion[]   // 所有历史版本
+  activeVersionId?: string      // 当前生效的版本ID
 }
 
 export interface Response {

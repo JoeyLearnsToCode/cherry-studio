@@ -13,6 +13,7 @@ import styled from 'styled-components'
 
 import MessageTokens from './MessageTokens'
 import { useMessageMenuItems } from './useMessageMenuItems'
+import MessageVersionSwitcher from './MessageVersionSwitcher'
 
 interface Props {
   message: Message
@@ -67,6 +68,7 @@ const MessageMenubar: FC<Props> = (props) => {
       {showMessageTokens && <MessageTokens message={message} />}
       <MenusBar
         className={classNames({ menubar: true, show: isLastMessage, 'user-bubble-style': isUserBubbleStyleMessage })}>
+        <MessageVersionSwitcher message={message} />
         {message.role === 'user' && (
           <Popconfirm
             title={t('message.regenerate.confirm')}
