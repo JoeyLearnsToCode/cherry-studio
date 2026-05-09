@@ -1,0 +1,205 @@
+import { ActionIconButton } from '@renderer/components/Buttons'
+import { QuickPanelReservedSymbol, useQuickPanel } from '@renderer/components/QuickPanel'
+import { useKnowledgeBases } from '@renderer/hooks/useKnowledge'
+import SelectUploadedFilesModal from '@renderer/pages/home/Inputbar/tools/components/SelectUploadedFilesModal'
+import type { ToolQuickPanelApi } from '@renderer/pages/home/Inputbar/types'
+import FileManager from '@renderer/services/FileManager'
+import type { FileMetadata, KnowledgeBase, KnowledgeItem,UploadedFileType } from '@renderer/types'
+import { filterSupportedFiles, formatFileSize } from '@renderer/utils/file'
+import { Tooltip } from 'antd'
+import dayjs from 'dayjs'
+import { FileSearch, FileText, FileUp, Paperclip, Upload } from 'lucide-react'
+import type { Dispatch, FC, SetStateAction } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+
+interface Props {
+  quickPanel: ToolQuickPanelApi
+  couldAddImageFile: boolean
+  extensions: string[]
+  files: FileMetadata[]
+  setFiles: Dispatch<SetStateAction<FileMetadata[]>>
+  disabled?: boolean
+}
+
+const AttachmentButton: FC<Props> = ({ quickPanel, couldAddImageFile, extensions, files, setFiles, disabled }) => {
+  const { t } = useTranslation()
+  const quickPanelHook = useQuickPanel()
+  const { bases: knowledgeBases } = useKnowledgeBases()
+  const [selecting, setSelecting] = useState<boolean>(false)
+  const [showUploadedFilesModal, setShowUploadedFilesModal] = useState(false)
+
+  const handleSelectUploadedFiles = useCallback(
+    (selectedFiles: FileMetadata[]) => {
+      // Rebuild path using FileManager.getFilePath() since db.files may have stale paths,
+      // and mark as _alreadyUploaded to skip re-uploading
+      const filesWithFixedPath = selectedFiles.map(
+        (f): UploadedFileType => ({
+          ...f,
+          path: FileManager.getFilePath(f),
+          _alreadyUploaded: true
+        })
+      )
+      setFiles([...files, ...filesWithFixedPath])
+      setShowUploadedFilesModal(false)
+    },
+    [files, setFiles]
+  )
+
+  const openFileSelectDialog = useCallback(async () => {
+    if (selecting) {
+      return
+    }
+    // when the number of extensions is greater than 20, use *.* to avoid selecting window lag
+    const useAllFiles = extensions.length > 20
+
+    setSelecting(true)
+    const _files = await window.api.file.select({
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        {
+          name: 'Files',
+          extensions: useAllFiles ? ['*'] : extensions.map((i) => i.replace('.', ''))
+        }
+      ]
+    })
+    setSelecting(false)
+
+    if (_files) {
+      if (!useAllFiles) {
+        setFiles([...files, ..._files])
+        return
+      }
+      const supportedFiles = await filterSupportedFiles(_files, extensions)
+      if (supportedFiles.length > 0) {
+        setFiles([...files, ...supportedFiles])
+      }
+
+      if (supportedFiles.length !== _files.length) {
+        window.toast.info(
+          t('chat.input.file_not_supported_count', {
+            count: _files.length - supportedFiles.length
+          })
+        )
+      }
+    }
+  }, [extensions, files, selecting, setFiles, t])
+
+  const openKnowledgeFileList = useCallback(
+    (base: KnowledgeBase) => {
+      quickPanelHook.open({
+        title: base.name,
+        list: base.items
+          .filter((file): file is KnowledgeItem => ['file'].includes(file.type))
+          .map((file) => {
+            const fileContent = file.content as FileMetadata
+            return {
+              label: fileContent.origin_name || fileContent.name,
+              description:
+                formatFileSize(fileContent.size) + ' · ' + dayjs(fileContent.created_at).format('YYYY-MM-DD HH:mm'),
+              icon: <FileText />,
+              isSelected: files.some((f) => f.path === fileContent.path),
+              action: async ({ item }) => {
+                item.isSelected = !item.isSelected
+                if (fileContent.path) {
+                  setFiles((prevFiles) => {
+                    const fileExists = prevFiles.some((f) => f.path === fileContent.path)
+                    if (fileExists) {
+                      return prevFiles.filter((f) => f.path !== fileContent.path)
+                    } else {
+                      return fileContent ? [...prevFiles, fileContent] : prevFiles
+                    }
+                  })
+                }
+              }
+            }
+          }),
+        symbol: QuickPanelReservedSymbol.File,
+        multiple: true
+      })
+    },
+    [files, quickPanelHook, setFiles]
+  )
+
+  const items = useMemo(() => {
+    return [
+      {
+        label: t('chat.input.upload.upload_from_local'),
+        description: '',
+        icon: <Upload />,
+        action: () => openFileSelectDialog()
+      },
+      {
+        label: t('chat.input.upload.select_uploaded'),
+        description: '',
+        icon: <FileUp />,
+        action: () => setShowUploadedFilesModal(true)
+      },
+      ...knowledgeBases.map((base) => {
+        const length = base.items?.filter(
+          (item): item is KnowledgeItem => ['file', 'note'].includes(item.type) && typeof item.content !== 'string'
+        ).length
+        return {
+          label: base.name,
+          description: `${length} ${t('files.count')}`,
+          icon: <FileSearch />,
+          disabled: length === 0,
+          isMenu: true,
+          action: () => openKnowledgeFileList(base)
+        }
+      })
+    ]
+  }, [knowledgeBases, openFileSelectDialog, openKnowledgeFileList, t])
+
+  const openQuickPanel = useCallback(() => {
+    quickPanelHook.open({
+      title: t('chat.input.upload.attachment'),
+      list: items,
+      symbol: QuickPanelReservedSymbol.File
+    })
+  }, [items, quickPanelHook, t])
+
+  useEffect(() => {
+    const disposeRootMenu = quickPanel.registerRootMenu([
+      {
+        label: couldAddImageFile ? t('chat.input.upload.attachment') : t('chat.input.upload.document'),
+        description: '',
+        icon: <Paperclip />,
+        isMenu: true,
+        action: () => openQuickPanel()
+      }
+    ])
+
+    const disposeTrigger = quickPanel.registerTrigger(QuickPanelReservedSymbol.File, () => openQuickPanel())
+
+    return () => {
+      disposeRootMenu()
+      disposeTrigger()
+    }
+  }, [couldAddImageFile, openQuickPanel, quickPanel, t])
+
+  const ariaLabel = couldAddImageFile ? t('chat.input.upload.image_or_document') : t('chat.input.upload.document')
+
+  return (
+    <>
+      <Tooltip placement="top" title={ariaLabel} mouseLeaveDelay={0} arrow>
+        <ActionIconButton
+          onClick={openFileSelectDialog}
+          active={files.length > 0}
+          disabled={disabled}
+          aria-label={ariaLabel}>
+          <Paperclip size={18} />
+        </ActionIconButton>
+      </Tooltip>
+      <SelectUploadedFilesModal
+        open={showUploadedFilesModal}
+        onClose={() => setShowUploadedFilesModal(false)}
+        onConfirm={handleSelectUploadedFiles}
+        extensions={extensions}
+        couldAddImageFile={couldAddImageFile}
+      />
+    </>
+  )
+}
+
+export default AttachmentButton

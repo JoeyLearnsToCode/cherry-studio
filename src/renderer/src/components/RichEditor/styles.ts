@@ -5,6 +5,7 @@ export const RichEditorWrapper = styled.div<{
   $maxHeight?: number
   $isFullWidth?: boolean
   $fontFamily?: 'default' | 'serif'
+  $fontSize?: number
 }>`
   display: flex;
   flex-direction: column;
@@ -13,12 +14,39 @@ export const RichEditorWrapper = styled.div<{
   border-radius: 6px;
   background: var(--color-background);
   overflow-y: hidden;
+  .ProseMirror table,
+  .tiptap table {
+    table-layout: auto !important;
+  }
+
+  .ProseMirror table th,
+  .ProseMirror table td,
+  .tiptap th,
+  .tiptap td {
+    white-space: normal !important;
+    word-wrap: break-word !important;
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+  }
+
+  .ProseMirror table th > *,
+  .ProseMirror table td > *,
+  .tiptap td > *,
+  .tiptap th > * {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+  }
   width: ${({ $isFullWidth }) => ($isFullWidth ? '100%' : '60%')};
   margin: ${({ $isFullWidth }) => ($isFullWidth ? '0' : '0 auto')};
   font-family: ${({ $fontFamily }) => ($fontFamily === 'serif' ? 'var(--font-family-serif)' : 'var(--font-family)')};
+  ${({ $fontSize }) => $fontSize && `--editor-font-size: ${$fontSize}px;`}
 
   ${({ $minHeight }) => $minHeight && `min-height: ${$minHeight}px;`}
   ${({ $maxHeight }) => $maxHeight && `max-height: ${$maxHeight}px;`}
+
 `
 
 export const ToolbarWrapper = styled.div`
@@ -90,6 +118,7 @@ export const ToolbarDivider = styled.div`
 
 export const EditorContent = styled.div`
   flex: 1;
+  min-height: 0;
   /* overflow handled by Scrollbar wrapper */
   position: relative; /* keep internal elements positioned, but ToC is now sibling */
 
@@ -129,7 +158,7 @@ export const EditorContent = styled.div`
   /* Ensure the ProseMirror editor content doesn't override drag handle positioning */
   .ProseMirror {
     position: relative;
-    height: 100%;
+    min-height: 100%;
 
     /* Allow text selection when not editable */
     &:not([contenteditable='true']) {

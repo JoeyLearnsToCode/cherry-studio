@@ -1,6 +1,6 @@
-import { NotesSettings } from '@renderer/store/note'
-import { Copy, MonitorSpeaker, Type } from 'lucide-react'
-import { ReactNode } from 'react'
+import type { NotesSettings } from '@renderer/store/note'
+import { Copy, FileText, MonitorSpeaker, Settings, Type } from 'lucide-react'
+import type { ReactNode } from 'react'
 
 export interface MenuItem {
   key: string
@@ -12,6 +12,8 @@ export interface MenuItem {
   isActive?: (settings: NotesSettings) => boolean
   component?: (settings: NotesSettings, updateSettings: (newSettings: Partial<NotesSettings>) => void) => ReactNode
   copyAction?: boolean
+  exportToWordAction?: boolean
+  showSettingsPopup?: boolean
 }
 
 export const menuItems: MenuItem[] = [
@@ -20,6 +22,12 @@ export const menuItems: MenuItem[] = [
     labelKey: 'notes.copyContent',
     icon: Copy,
     copyAction: true
+  },
+  {
+    key: 'export-to-word',
+    labelKey: 'notes.exportToWord',
+    icon: FileText,
+    exportToWordAction: true
   },
   {
     key: 'divider0',
@@ -32,6 +40,13 @@ export const menuItems: MenuItem[] = [
     icon: MonitorSpeaker,
     action: (settings, updateSettings) => updateSettings({ isFullWidth: !settings.isFullWidth }),
     isActive: (settings) => !settings.isFullWidth
+  },
+  {
+    key: 'table-of-contents',
+    labelKey: 'notes.settings.display.show_table_of_contents',
+    icon: Type,
+    action: (settings, updateSettings) => updateSettings({ showTableOfContents: !settings.showTableOfContents }),
+    isActive: (settings) => settings.showTableOfContents
   },
   {
     key: 'divider1',
@@ -54,7 +69,41 @@ export const menuItems: MenuItem[] = [
         labelKey: 'notes.settings.display.serif_font',
         action: (_, updateSettings) => updateSettings({ fontFamily: 'serif' }),
         isActive: (settings) => settings.fontFamily === 'serif'
+      },
+      {
+        key: 'divider2',
+        type: 'divider',
+        labelKey: ''
+      },
+      {
+        key: 'font-size-small',
+        labelKey: 'notes.settings.display.font_size_small',
+        action: (_, updateSettings) => updateSettings({ fontSize: 14 }),
+        isActive: (settings) => settings.fontSize === 14
+      },
+      {
+        key: 'font-size-medium',
+        labelKey: 'notes.settings.display.font_size_medium',
+        action: (_, updateSettings) => updateSettings({ fontSize: 16 }),
+        isActive: (settings) => settings.fontSize === 16
+      },
+      {
+        key: 'font-size-large',
+        labelKey: 'notes.settings.display.font_size_large',
+        action: (_, updateSettings) => updateSettings({ fontSize: 20 }),
+        isActive: (settings) => settings.fontSize === 20
       }
     ]
+  },
+  {
+    key: 'divider-settings',
+    type: 'divider',
+    labelKey: ''
+  },
+  {
+    key: 'more-settings',
+    labelKey: 'settings.moresetting.label',
+    icon: Settings,
+    showSettingsPopup: true
   }
 ]

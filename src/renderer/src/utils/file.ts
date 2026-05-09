@@ -1,5 +1,7 @@
-import { FileMetadata } from '@renderer/types'
-import { KB, MB, textExts } from '@shared/config/constant'
+import type { FileMetadata, FileType } from '@renderer/types'
+import { FILE_TYPE } from '@renderer/types'
+import { audioExts, documentExts, GB, imageExts, KB, MB, textExts, videoExts } from '@shared/config/constant'
+import mime from 'mime-types'
 
 /**
  * 从文件路径中提取目录路径。
@@ -44,6 +46,10 @@ export function removeFileExtension(filePath: string): string {
  * @returns {string} 格式化后的文件大小字符串
  */
 export function formatFileSize(size: number): string {
+  if (size >= GB) {
+    return (size / GB).toFixed(1) + ' GB'
+  }
+
   if (size >= MB) {
     return (size / MB).toFixed(1) + ' MB'
   }
@@ -108,4 +114,30 @@ export async function filterSupportedFiles(files: FileMetadata[], supportExts: s
     }))
   )
   return validationResults.filter((result) => result.isValid).map((result) => result.file)
+}
+
+export const mime2type = (mimeStr: string): FileType => {
+  const mimeType = mimeStr.toLowerCase()
+  const ext = mime.extension(mimeType)
+  if (ext) {
+    if (textExts.includes(ext)) {
+      return FILE_TYPE.TEXT
+    } else if (imageExts.includes(ext)) {
+      return FILE_TYPE.IMAGE
+    } else if (documentExts.includes(ext)) {
+      return FILE_TYPE.DOCUMENT
+    } else if (audioExts.includes(ext)) {
+      return FILE_TYPE.AUDIO
+    } else if (videoExts.includes(ext)) {
+      return FILE_TYPE.VIDEO
+    }
+  }
+  return FILE_TYPE.OTHER
+}
+
+export function parseFileTypes(str: string): FileType | null {
+  if (Object.values(FILE_TYPE).some((type) => type === str)) {
+    return str as FileType
+  }
+  return null
 }

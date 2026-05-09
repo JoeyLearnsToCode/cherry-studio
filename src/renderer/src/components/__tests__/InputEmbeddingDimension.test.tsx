@@ -16,10 +16,21 @@ const mocks = vi.hoisted(() => ({
         'knowledge.provider_not_found': '找不到提供商',
         'message.error.get_embedding_dimensions': '获取嵌入维度失败',
         'knowledge.dimensions_size_placeholder': '请输入维度大小',
-        'knowledge.dimensions_auto_set': '自动设置维度'
+        'knowledge.dimensions_auto_set': '自动设置维度',
+        'common.get_embedding_dimension': 'Get Embedding Dimension'
       }
       return translations[k] || k
     }
+  }
+}))
+
+vi.mock('@renderer/store', () => ({
+  default: {
+    getState: () => ({
+      llm: {
+        settings: {}
+      }
+    })
   }
 }))
 
@@ -70,13 +81,17 @@ vi.mock('antd', () => {
 
 // Mock dependencies
 vi.mock('@renderer/aiCore', () => ({
-  default: vi.fn().mockImplementation(() => ({
+  AiProvider: vi.fn().mockImplementation(() => ({
     getEmbeddingDimensions: mocks.aiCore.getEmbeddingDimensions
   }))
 }))
 
 vi.mock('@renderer/hooks/useProvider', () => ({
-  useProvider: () => ({ provider: { id: 'test-provider', name: 'Test Provider' } })
+  useProvider: () => ({ provider: { id: 'test-provider', name: 'Test Provider', apiKey: 'test-key' } })
+}))
+
+vi.mock('@renderer/services/ApiService', () => ({
+  getRotatedApiKey: (provider: any) => provider.apiKey || ''
 }))
 
 // mock i18n
@@ -98,9 +113,9 @@ vi.mock('@renderer/components/Icons', () => ({
   )
 }))
 
-// Mock window.message
+// Mock window.toast
 Object.assign(window, {
-  message: {
+  toast: {
     error: vi.fn(),
     success: vi.fn()
   }
@@ -195,7 +210,7 @@ describe('InputEmbeddingDimension', () => {
       // We can skip this check to be explicit.
       await userEvent.click(refreshButton, { pointerEventsCheck: 0 })
 
-      expect(window.message.error).not.toHaveBeenCalled()
+      expect(window.toast.error).not.toHaveBeenCalled()
     })
 
     it('should show error when API call fails', async () => {
@@ -208,7 +223,7 @@ describe('InputEmbeddingDimension', () => {
       await user.click(refreshButton)
 
       await waitFor(() => {
-        expect(window.message.error).toHaveBeenCalledWith('获取嵌入维度失败\nAPI Error')
+        expect(window.toast.error).toHaveBeenCalledWith('获取嵌入维度失败\nAPI Error')
       })
     })
 

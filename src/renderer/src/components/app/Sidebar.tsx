@@ -22,17 +22,19 @@ import {
   MessageSquare,
   Monitor,
   Moon,
+  MousePointerClick,
   NotepadText,
   Palette,
   Settings,
   Sparkle,
   Sun
 } from 'lucide-react'
-import { FC } from 'react'
+import type { FC } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 
+import { OpenClawSidebarIcon } from '../Icons/SVGIcon'
 import UserPopup from '../Popups/UserPopup'
 import { SidebarOpenedMinappTabs, SidebarPinnedApps } from './PinnedMinapps'
 
@@ -89,10 +91,7 @@ const Sidebar: FC = () => {
         )}
       </MainMenusContainer>
       <Menus>
-        <Tooltip
-          title={t('settings.theme.title') + ': ' + getThemeModeLabel(settedTheme)}
-          mouseEnterDelay={0.8}
-          placement="right">
+        <Tooltip title={t('settings.theme.title') + ': ' + getThemeModeLabel(settedTheme)} placement="right">
           <Icon theme={theme} onClick={toggleTheme}>
             {settedTheme === ThemeMode.dark ? (
               <Moon size={20} className="icon" />
@@ -128,30 +127,34 @@ const MainMenus: FC = () => {
   const { theme } = useTheme()
 
   const isRoute = (path: string): string => (pathname === path && !minappShow ? 'active' : '')
-  const isRoutes = (path: string): string => (pathname.startsWith(path) && !minappShow ? 'active' : '')
+  const isRoutes = (path: string): string => (pathname.startsWith(path) && path !== '/' && !minappShow ? 'active' : '')
 
   const iconMap = {
     assistants: <MessageSquare size={18} className="icon" />,
-    agents: <Sparkle size={18} className="icon" />,
+    agents: <MousePointerClick size={18} className="icon" />,
+    store: <Sparkle size={18} className="icon" />,
     paintings: <Palette size={18} className="icon" />,
     translate: <Languages size={18} className="icon" />,
     minapp: <LayoutGrid size={18} className="icon" />,
     knowledge: <FileSearch size={18} className="icon" />,
     files: <Folder size={18} className="icon" />,
     notes: <NotepadText size={18} className="icon" />,
-    code_tools: <Code size={18} className="icon" />
+    code_tools: <Code size={18} className="icon" />,
+    openclaw: <OpenClawSidebarIcon style={{ width: 18, height: 18 }} className="icon" />
   }
 
   const pathMap = {
     assistants: '/',
     agents: '/agents',
+    store: '/store',
     paintings: `/paintings/${defaultPaintingProvider}`,
     translate: '/translate',
     minapp: '/apps',
     knowledge: '/knowledge',
     files: '/files',
     code_tools: '/code',
-    notes: '/notes'
+    notes: '/notes',
+    openclaw: '/openclaw'
   }
 
   return sidebarIcons.visible.map((icon) => {
@@ -185,7 +188,7 @@ const Container = styled.div<{ $isFullscreen: boolean }>`
   min-width: var(--sidebar-width);
   height: ${({ $isFullscreen }) => (isMac && !$isFullscreen ? 'calc(100vh - var(--navbar-height))' : '100vh')};
   -webkit-app-region: drag !important;
-  margin-top: ${({ $isFullscreen }) => (isMac && !$isFullscreen ? 'var(--navbar-height)' : 0)};
+  margin-top: ${({ $isFullscreen }) => (isMac && !$isFullscreen ? 'env(titlebar-area-height)' : 0)};
 
   .sidebar-avatar {
     margin-bottom: ${isMac ? '12px' : '12px'};
@@ -228,6 +231,9 @@ const Icon = styled.div<{ theme: string }>`
   box-sizing: border-box;
   -webkit-app-region: none;
   border: 0.5px solid transparent;
+  .icon {
+    color: var(--color-icon);
+  }
   &:hover {
     background-color: ${({ theme }) => (theme === 'dark' ? 'var(--color-black)' : 'var(--color-white)')};
     opacity: 0.8;

@@ -26,7 +26,7 @@ export const oauthWithSiliconFlow = async (setKey) => {
 }
 
 export const oauthWithAihubmix = async (setKey) => {
-  const authUrl = ` https://aihubmix.com/token?client_id=cherry_studio_oauth&lang=${getLanguageCode()}&aff=SJyh`
+  const authUrl = ` https://console.aihubmix.com/token?client_id=cherry_studio_oauth&lang=${getLanguageCode()}&aff=SJyh`
 
   const popup = window.open(
     authUrl,
@@ -52,7 +52,7 @@ export const oauthWithAihubmix = async (setKey) => {
       } catch (error) {
         logger.error('[oauthWithAihubmix] error', error as Error)
         popup?.close()
-        window.message.error(i18n.t('settings.provider.oauth.error'))
+        window.toast.error(i18n.t('settings.provider.oauth.error'))
       }
     }
   }
@@ -140,7 +140,7 @@ export const oauthWithTokenFlux = async () => {
   const callbackUrl = `${TOKENFLUX_HOST}/auth/callback?redirect_to=/dashboard/api-keys`
   const resp = await fetch(`${TOKENFLUX_HOST}/api/auth/auth-url?type=login&callback=${callbackUrl}`, {})
   if (!resp.ok) {
-    window.message.error(i18n.t('settings.provider.oauth.error'))
+    window.toast.error(i18n.t('settings.provider.oauth.error'))
     return
   }
   const data = await resp.json()
@@ -172,6 +172,132 @@ export const oauthWith302AI = async (setKey) => {
   window.addEventListener('message', messageHandler)
 }
 
+export const oauthWithAiOnly = async (setKey) => {
+  const authUrl = `https://maas.aiionly.com/login?inviteCode=1755481173663DrZBBOC0&cherryCode=01`
+
+  const popup = window.open(
+    authUrl,
+    'login',
+    'width=720,height=720,toolbar=no,location=no,status=no,menubar=no,scrollbars=yes,resizable=yes,alwaysOnTop=yes,alwaysRaised=yes'
+  )
+
+  const messageHandler = (event) => {
+    if (event.data.length > 0 && event.data[0]['secretKey'] !== undefined) {
+      setKey(event.data[0]['secretKey'])
+      popup?.close()
+      window.removeEventListener('message', messageHandler)
+    }
+  }
+
+  window.removeEventListener('message', messageHandler)
+  window.addEventListener('message', messageHandler)
+}
+
+export interface NewApiOAuthConfig {
+  oauthServer: string
+  apiHost?: string
+}
+
+/**
+ * CherryIN OAuth flow using Authorization Code with PKCE
+ * PKCE generation and token exchange happen in the main process for security
+ * @param setKey - Callback to set the API key
+ * @param config - OAuth configuration (oauthServer, apiHost)
+ */
+export const oauthWithCherryIn = async (setKey: (key: string) => void, config: NewApiOAuthConfig): Promise<string> => {
+  const { oauthServer, apiHost } = config
+
+  // Start OAuth flow in main process (generates PKCE params and returns auth URL)
+  const { authUrl, state } = await window.api.cherryin.startOAuthFlow(oauthServer, apiHost)
+
+  logger.debug('Opening authorization URL')
+
+  // Open in popup window
+  window.open(
+    authUrl,
+    'oauth',
+    'width=720,height=720,toolbar=no,location=no,status=no,menubar=no,scrollbars=yes,resizable=yes,alwaysOnTop=yes,alwaysRaised=yes'
+  )
+
+  return new Promise<string>((resolve, reject) => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+
+    const removeListener = window.api.protocol.onReceiveData(async (data) => {
+      try {
+        const url = new URL(data.url)
+
+        // Only handle our OAuth callback
+        if (url.hostname !== 'oauth' || url.pathname !== '/callback') {
+          return
+        }
+
+        const params = new URLSearchParams(url.search)
+        const code = params.get('code')
+        const returnedState = params.get('state')
+        const error = params.get('error')
+
+        // Handle OAuth errors
+        if (error) {
+          const errorDesc = params.get('error_description') || error
+          logger.error(`Error: ${errorDesc}`)
+          reject(new Error(`OAuth error: ${errorDesc}`))
+          cleanup()
+          return
+        }
+
+        if (!code) {
+          reject(new Error('No authorization code received'))
+          cleanup()
+          return
+        }
+
+        // Verify state matches (CSRF protection)
+        if (returnedState !== state) {
+          logger.debug('State mismatch, ignoring callback')
+          return
+        }
+
+        logger.debug('Exchanging code for token via main process')
+
+        // Exchange code for tokens in main process (has PKCE code_verifier)
+        const { apiKeys } = await window.api.cherryin.exchangeToken(code, state)
+
+        if (apiKeys) {
+          logger.debug('Successfully obtained API keys')
+          setKey(apiKeys)
+          resolve(apiKeys)
+        } else {
+          reject(new Error('No API keys received'))
+        }
+
+        cleanup()
+      } catch (error) {
+        logger.error('Error processing callback:', error as Error)
+        reject(error)
+        cleanup()
+      }
+    })
+
+    function cleanup(): void {
+      removeListener()
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+        timeoutId = null
+      }
+    }
+
+    // Timeout after 10 minutes
+    timeoutId = setTimeout(
+      () => {
+        logger.warn('Flow timed out')
+        cleanup()
+        reject(new Error('OAuth flow timed out'))
+      },
+      10 * 60 * 1000
+    )
+  })
+}
+
 export const providerCharge = async (provider: string) => {
   const chargeUrlMap = {
     silicon: {
@@ -180,7 +306,7 @@ export const providerCharge = async (provider: string) => {
       height: 700
     },
     aihubmix: {
-      url: `https://aihubmix.com/topup?client_id=cherry_studio_oauth&lang=${getLanguageCode()}&aff=SJyh`,
+      url: `https://console.aihubmix.com/topup?client_id=cherry_studio_oauth&lang=${getLanguageCode()}&aff=SJyh`,
       width: 720,
       height: 900
     },
@@ -196,6 +322,11 @@ export const providerCharge = async (provider: string) => {
     },
     '302ai': {
       url: 'https://dash.302.ai/charge',
+      width: 900,
+      height: 700
+    },
+    aionly: {
+      url: `https://maas.aiionly.com/recharge`,
       width: 900,
       height: 700
     }
@@ -218,7 +349,7 @@ export const providerBills = async (provider: string) => {
       height: 700
     },
     aihubmix: {
-      url: `https://aihubmix.com/statistics?client_id=cherry_studio_oauth&lang=${getLanguageCode()}&aff=SJyh`,
+      url: `https://console.aihubmix.com/statistics?client_id=cherry_studio_oauth&lang=${getLanguageCode()}&aff=SJyh`,
       width: 900,
       height: 700
     },
@@ -234,6 +365,11 @@ export const providerBills = async (provider: string) => {
     },
     '302ai': {
       url: 'https://dash.302.ai/charge',
+      width: 900,
+      height: 700
+    },
+    aionly: {
+      url: `https://maas.aiionly.com/billManagement`,
       width: 900,
       height: 700
     }

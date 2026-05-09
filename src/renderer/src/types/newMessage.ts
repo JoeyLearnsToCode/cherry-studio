@@ -1,4 +1,5 @@
-import type { CompletionUsage } from 'openai/resources'
+import type { CompletionUsage } from '@cherrystudio/openai/resources'
+import type { ProviderMetadata } from 'ai'
 
 import type {
   Assistant,
@@ -10,11 +11,13 @@ import type {
   MemoryItem,
   Metrics,
   Model,
+  NormalToolResponse,
   Topic,
   Usage,
   WebSearchResponse,
   WebSearchSource
 } from '.'
+import type { SerializedError } from './error'
 
 // MessageBlock 类型枚举 - 根据实际API返回特性优化
 export enum MessageBlockType {
@@ -27,7 +30,9 @@ export enum MessageBlockType {
   TOOL = 'tool', // Added unified tool block type
   FILE = 'file', // 文件内容
   ERROR = 'error', // 错误信息
-  CITATION = 'citation' // 引用类型 (Now includes web search, grounding, etc.)
+  CITATION = 'citation', // 引用类型 (Now includes web search, grounding, etc.)
+  VIDEO = 'video', // 视频内容
+  COMPACT = 'compact' // Compact command response
 }
 
 // 块状态定义
@@ -50,7 +55,7 @@ export interface BaseMessageBlock {
   status: MessageBlockStatus // 块状态
   model?: Model // 使用的模型
   metadata?: Record<string, any> // 通用元数据
-  error?: Record<string, any> // Added optional error field to base
+  error?: SerializedError // Serializable error object instead of AISDKError
 }
 
 export interface PlaceholderMessageBlock extends BaseMessageBlock {
@@ -73,7 +78,7 @@ export interface MainTextMessageBlock extends BaseMessageBlock {
 export interface ThinkingMessageBlock extends BaseMessageBlock {
   type: MessageBlockType.THINKING
   content: string
-  thinking_millsec?: number
+  thinking_millsec: number
 }
 
 // 翻译块
@@ -112,7 +117,7 @@ export interface ToolMessageBlock extends BaseMessageBlock {
   arguments?: Record<string, any>
   content?: string | object
   metadata?: BaseMessageBlock['metadata'] & {
-    rawMcpToolResponse?: MCPToolResponse
+    rawMcpToolResponse?: MCPToolResponse | NormalToolResponse
   }
 }
 
@@ -129,9 +134,24 @@ export interface FileMessageBlock extends BaseMessageBlock {
   type: MessageBlockType.FILE
   file: FileMetadata // 文件信息
 }
+
+// 视频块
+export interface VideoMessageBlock extends BaseMessageBlock {
+  type: MessageBlockType.VIDEO
+  url?: string // For generated video or direct links
+  filePath?: string // For user uploaded video files
+}
+
 // 错误块
 export interface ErrorMessageBlock extends BaseMessageBlock {
   type: MessageBlockType.ERROR
+}
+
+// Compact块 - 用于显示 /compact 命令的响应
+export interface CompactMessageBlock extends BaseMessageBlock {
+  type: MessageBlockType.COMPACT
+  content: string // 总结消息
+  compactedContent: string // 从 <local-command-stdout> 提取的内容
 }
 
 // MessageBlock 联合类型
@@ -146,6 +166,8 @@ export type MessageBlock =
   | FileMessageBlock
   | ErrorMessageBlock
   | CitationMessageBlock
+  | VideoMessageBlock
+  | CompactMessageBlock
 
 export enum UserMessageStatus {
   SUCCESS = 'success'
@@ -161,10 +183,10 @@ export enum AssistantMessageStatus {
 }
 // 消息版本记录 - 用于跟踪用户消息的编辑历史
 export interface MessageVersion {
-  id: string           // 版本唯一标识
-  content: string      // 版本内容（纯文本，不含blocks结构）
-  createdAt: string    // 版本创建时间
-  updatedAt?: string   // 版本更新时间（编辑时）
+  id: string // 版本唯一标识
+  content: string // 版本内容（纯文本，不含blocks结构）
+  createdAt: string // 版本创建时间
+  updatedAt?: string // 版本更新时间（编辑时）
 }
 
 // Message 核心类型 - 包含元数据和块集合
@@ -203,8 +225,15 @@ export type Message = {
   traceId?: string
 
   // 版本管理（仅用户消息）
-  versions?: MessageVersion[]   // 所有历史版本
-  activeVersionId?: string      // 当前生效的版本ID
+  versions?: MessageVersion[] // 所有历史版本
+  activeVersionId?: string // 当前生效的版本ID
+
+  // Agent session identifier used to resume Claude Code runs
+  agentSessionId?: string
+
+  // raw data
+  // TODO: add this providerMetadata to MessageBlock to save raw provider data for each block
+  providerMetadata?: ProviderMetadata
 }
 
 export interface Response {
@@ -218,6 +247,7 @@ export interface Response {
   error?: ResponseError
 }
 
+// FIXME: Weak type safety. It may be a specific class instance which inherits Error in runtime.
 export type ResponseError = Record<string, any>
 
 export interface MessageInputBaseParams {

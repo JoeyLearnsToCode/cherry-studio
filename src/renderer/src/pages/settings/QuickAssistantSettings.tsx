@@ -11,9 +11,11 @@ import {
   setEnableQuickAssistant,
   setReadClipboardAtStartup
 } from '@renderer/store/settings'
+import { matchKeywordsInString } from '@renderer/utils'
 import HomeWindow from '@renderer/windows/mini/home/HomeWindow'
 import { Button, Select, Switch, Tooltip } from 'antd'
-import { FC } from 'react'
+import type { FC } from 'react'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
@@ -26,21 +28,26 @@ const QuickAssistantSettings: FC = () => {
   const dispatch = useAppDispatch()
   const { assistants } = useAssistants()
   const { quickAssistantId } = useAppSelector((state) => state.llm)
-  const { defaultAssistant } = useDefaultAssistant()
+  const { defaultAssistant: _defaultAssistant } = useDefaultAssistant()
   const { defaultModel } = useDefaultModel()
+
+  // Take the "default assistant" from the assistant list first.
+  const defaultAssistant = useMemo(
+    () => assistants.find((a) => a.id === _defaultAssistant.id) || _defaultAssistant,
+    [assistants, _defaultAssistant]
+  )
 
   const handleEnableQuickAssistant = async (enable: boolean) => {
     dispatch(setEnableQuickAssistant(enable))
     await window.api.config.set('enableQuickAssistant', enable, true)
 
-    !enable && window.api.miniWindow.close()
+    void (!enable && window.api.miniWindow.close())
 
     if (enable && !clickTrayToShowQuickAssistant) {
-      window.message.info({
-        content: t('settings.quickAssistant.use_shortcut_to_show'),
-        duration: 4,
-        icon: <InfoCircleOutlined />,
-        key: 'quick-assistant-info'
+      window.toast.info({
+        title: t('settings.quickAssistant.use_shortcut_to_show'),
+        timeout: 4000,
+        icon: <InfoCircleOutlined />
       })
     }
 
@@ -58,7 +65,7 @@ const QuickAssistantSettings: FC = () => {
   const handleClickReadClipboardAtStartup = async (checked: boolean) => {
     dispatch(setReadClipboardAtStartup(checked))
     await window.api.config.set('readClipboardAtStartup', checked)
-    window.api.miniWindow.close()
+    void window.api.miniWindow.close()
   }
 
   return (
@@ -111,27 +118,39 @@ const QuickAssistantSettings: FC = () => {
                     value={quickAssistantId || defaultAssistant.id}
                     style={{ width: 300, height: 34 }}
                     onChange={(value) => dispatch(setQuickAssistantId(value))}
-                    placeholder={t('settings.models.quick_assistant_selection')}>
-                    <Select.Option key={defaultAssistant.id} value={defaultAssistant.id}>
-                      <AssistantItem>
-                        <ModelAvatar model={defaultAssistant.model || defaultModel} size={18} />
-                        <AssistantName>{defaultAssistant.name}</AssistantName>
-                        <Spacer />
-                        <DefaultTag isCurrent={true}>{t('settings.models.quick_assistant_default_tag')}</DefaultTag>
-                      </AssistantItem>
-                    </Select.Option>
-                    {assistants
-                      .filter((a) => a.id !== defaultAssistant.id)
-                      .map((a) => (
-                        <Select.Option key={a.id} value={a.id}>
+                    placeholder={t('settings.models.quick_assistant_selection')}
+                    showSearch
+                    options={[
+                      {
+                        key: defaultAssistant.id,
+                        value: defaultAssistant.id,
+                        title: defaultAssistant.name,
+                        label: (
                           <AssistantItem>
-                            <ModelAvatar model={a.model || defaultModel} size={18} />
-                            <AssistantName>{a.name}</AssistantName>
+                            <ModelAvatar model={defaultAssistant.model || defaultModel} size={18} />
+                            <AssistantName>{defaultAssistant.name}</AssistantName>
                             <Spacer />
+                            <DefaultTag isCurrent={true}>{t('settings.models.quick_assistant_default_tag')}</DefaultTag>
                           </AssistantItem>
-                        </Select.Option>
-                      ))}
-                  </Select>
+                        )
+                      },
+                      ...assistants
+                        .filter((a) => a.id !== defaultAssistant.id)
+                        .map((a) => ({
+                          key: a.id,
+                          value: a.id,
+                          title: a.name,
+                          label: (
+                            <AssistantItem>
+                              <ModelAvatar model={a.model || defaultModel} size={18} />
+                              <AssistantName>{a.name}</AssistantName>
+                              <Spacer />
+                            </AssistantItem>
+                          )
+                        }))
+                    ]}
+                    filterOption={(input, option) => matchKeywordsInString(input, option?.title || '')}
+                  />
                 </HStack>
               )}
               <HStack alignItems="center" gap={0}>

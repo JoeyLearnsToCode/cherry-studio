@@ -3,19 +3,24 @@ import os from 'node:os'
 import path from 'node:path'
 
 import { loggerService } from '@logger'
+import { getMCPServersFromRedux } from '@main/apiServer/utils/mcp'
 import { createInMemoryMCPServer } from '@main/mcpServers/factory'
 import { makeSureDirExists, removeEnvProxy } from '@main/utils'
-import { buildFunctionCallToolName } from '@main/utils/mcp'
-import { getBinaryName, getBinaryPath } from '@main/utils/process'
+import { findCommandInShellEnv, getBinaryName, getBinaryPath, isBinaryExists } from '@main/utils/process'
+import getLoginShellEnvironment from '@main/utils/shell-env'
 import { TraceMethod, withSpanFunc } from '@mcp-trace/trace-core'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { SSEClientTransport, SSEClientTransportOptions } from '@modelcontextprotocol/sdk/client/sse.js'
+import type { SSEClientTransportOptions } from '@modelcontextprotocol/sdk/client/sse.js'
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
+import type { StdioServerParameters } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import {
   StreamableHTTPClientTransport,
   type StreamableHTTPClientTransportOptions
 } from '@modelcontextprotocol/sdk/client/streamableHttp'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory'
+import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js'
+import { McpError, type Tool as SDKTool } from '@modelcontextprotocol/sdk/types'
 // Import notification schemas from MCP SDK
 import {
   CancelledNotificationSchema,
@@ -27,6 +32,13 @@ import {
   ToolListChangedNotificationSchema
 } from '@modelcontextprotocol/sdk/types.js'
 import { nanoid } from '@reduxjs/toolkit'
+import { HOME_CHERRY_DIR } from '@shared/config/constant'
+import type { MCPProgressEvent } from '@shared/config/types'
+import type { MCPServerLogEntry } from '@shared/config/types'
+import { IpcChannel } from '@shared/IpcChannel'
+import { buildFunctionCallToolName } from '@shared/mcp'
+import { defaultAppHeaders } from '@shared/utils'
+import { safeSerialize } from '@shared/utils/serialize'
 import {
   BuiltinMCPServerNames,
   type GetResourceResponse,
@@ -35,18 +47,19 @@ import {
   type MCPPrompt,
   type MCPResource,
   type MCPServer,
-  type MCPTool
+  type MCPTool,
+  MCPToolInputSchema,
+  MCPToolOutputSchema
 } from '@types'
 import { app, net } from 'electron'
 import { EventEmitter } from 'events'
-import { memoize } from 'lodash'
 import { v4 as uuidv4 } from 'uuid'
 
 import { CacheService } from './CacheService'
 import DxtService from './DxtService'
 import { CallBackServer } from './mcp/oauth/callback'
 import { McpOAuthClientProvider } from './mcp/oauth/provider'
-import getLoginShellEnvironment from './mcp/shell-env'
+import { ServerLogBuffer } from './mcp/ServerLogBuffer'
 import { windowService } from './WindowService'
 
 // Generic type for caching wrapped functions
@@ -55,6 +68,50 @@ type CachedFunction<T extends unknown[], R> = (...args: T) => Promise<R>
 type CallToolArgs = { server: MCPServer; name: string; args: any; callId?: string }
 
 const logger = loggerService.withContext('MCPService')
+
+// Minimum timeout for the MCP `initialize` request. Connect runs once per activation,
+// so a generous floor avoids false positives on slow SSE/streamableHttp handshakes while
+// still letting users raise it further via `server.timeout`.
+const MCP_CONNECT_TIMEOUT_FLOOR_MS = 180_000
+
+// Redact potentially sensitive fields in objects (headers, tokens, api keys)
+function redactSensitive(input: any): any {
+  const SENSITIVE_KEYS = ['authorization', 'Authorization', 'apiKey', 'api_key', 'apikey', 'token', 'access_token']
+  const MAX_STRING = 300
+
+  const redact = (val: any): any => {
+    if (val == null) return val
+    if (typeof val === 'string') {
+      return val.length > MAX_STRING ? `${val.slice(0, MAX_STRING)}…<${val.length - MAX_STRING} more>` : val
+    }
+    if (Array.isArray(val)) return val.map((v) => redact(v))
+    if (typeof val === 'object') {
+      const out: Record<string, any> = {}
+      for (const [k, v] of Object.entries(val)) {
+        if (SENSITIVE_KEYS.includes(k)) {
+          out[k] = '<redacted>'
+        } else {
+          out[k] = redact(v)
+        }
+      }
+      return out
+    }
+    return val
+  }
+
+  return redact(input)
+}
+
+// Create a context-aware logger for a server
+function getServerLogger(server: MCPServer, extra?: Record<string, any>) {
+  const base = {
+    serverName: server?.name,
+    serverId: server?.id,
+    baseUrl: server?.baseUrl,
+    type: server?.type || (server?.command ? 'stdio' : server?.baseUrl ? 'http' : 'inmemory')
+  }
+  return loggerService.withContext('MCPService', { ...base, ...extra })
+}
 
 /**
  * Higher-order function to add caching capability to any async function
@@ -74,15 +131,17 @@ function withCache<T extends unknown[], R>(
     const cacheKey = getCacheKey(...args)
 
     if (CacheService.has(cacheKey)) {
-      logger.debug(`${logPrefix} loaded from cache`)
+      logger.debug(`${logPrefix} loaded from cache`, { cacheKey })
       const cachedData = CacheService.get<R>(cacheKey)
       if (cachedData) {
         return cachedData
       }
     }
 
+    const start = Date.now()
     const result = await fn(...args)
     CacheService.set(cacheKey, result, ttl)
+    logger.debug(`${logPrefix} cached`, { cacheKey, ttlMs: ttl, durationMs: Date.now() - start })
     return result
   }
 }
@@ -92,6 +151,7 @@ class McpService {
   private pendingClients: Map<string, Promise<Client>> = new Map()
   private dxtService = new DxtService()
   private activeToolCalls: Map<string, AbortController> = new Map()
+  private serverLogs = new ServerLogBuffer(200)
 
   constructor() {
     this.initClient = this.initClient.bind(this)
@@ -109,6 +169,68 @@ class McpService {
     this.cleanup = this.cleanup.bind(this)
     this.checkMcpConnectivity = this.checkMcpConnectivity.bind(this)
     this.getServerVersion = this.getServerVersion.bind(this)
+    this.getServerLogs = this.getServerLogs.bind(this)
+  }
+
+  /**
+   * List all tools from all active MCP servers (excluding hub).
+   * Used by Hub server's tool registry.
+   */
+  public async listAllActiveServerTools(): Promise<MCPTool[]> {
+    const servers = await getMCPServersFromRedux()
+    const activeServers = servers.filter((server) => server.isActive)
+
+    const results = await Promise.allSettled(
+      activeServers.map(async (server) => {
+        const tools = await this.listToolsImpl(server)
+        const disabledTools = new Set(server.disabledTools ?? [])
+        return disabledTools.size > 0 ? tools.filter((tool) => !disabledTools.has(tool.name)) : tools
+      })
+    )
+
+    const allTools: MCPTool[] = []
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        allTools.push(...result.value)
+      } else {
+        logger.error(
+          `[listAllActiveServerTools] Failed to list tools from ${activeServers[index].name}:`,
+          result.reason as Error
+        )
+      }
+    })
+
+    return allTools
+  }
+
+  /**
+   * Call a tool by its full ID (serverId__toolName format).
+   * Used by Hub server's runtime.
+   */
+  public async callToolById(toolId: string, params: unknown, callId?: string): Promise<MCPCallToolResponse> {
+    const parts = toolId.split('__')
+    if (parts.length < 2) {
+      throw new Error(`Invalid tool ID format: ${toolId}`)
+    }
+
+    const serverId = parts[0]
+    const toolName = parts.slice(1).join('__')
+
+    const servers = await getMCPServersFromRedux()
+    const server = servers.find((s) => s.id === serverId)
+
+    if (!server) {
+      throw new Error(`Server not found: ${serverId}`)
+    }
+
+    logger.debug(`[callToolById] Calling tool ${toolName} on server ${server.name}`)
+
+    return this.callTool(null as unknown as Electron.IpcMainInvokeEvent, {
+      server,
+      name: toolName,
+      args: params,
+      callId
+    })
   }
 
   private getServerKey(server: MCPServer): string {
@@ -122,12 +244,26 @@ class McpService {
     })
   }
 
+  private emitServerLog(server: MCPServer, entry: MCPServerLogEntry) {
+    const serverKey = this.getServerKey(server)
+    this.serverLogs.append(serverKey, entry)
+    const mainWindow = windowService.getMainWindow()
+    if (mainWindow) {
+      mainWindow.webContents.send(IpcChannel.Mcp_ServerLog, { ...entry, serverId: server.id })
+    }
+  }
+
+  public getServerLogs(_: Electron.IpcMainInvokeEvent, server: MCPServer): MCPServerLogEntry[] {
+    return this.serverLogs.get(this.getServerKey(server))
+  }
+
   async initClient(server: MCPServer): Promise<Client> {
     const serverKey = this.getServerKey(server)
 
     // If there's a pending initialization, wait for it
     const pendingClient = this.pendingClients.get(serverKey)
     if (pendingClient) {
+      getServerLogger(server).silly(`Waiting for pending client initialization`)
       return pendingClient
     }
 
@@ -136,8 +272,11 @@ class McpService {
     if (existingClient) {
       try {
         // Check if the existing client is still connected
-        const pingResult = await existingClient.ping()
-        logger.debug(`Ping result for ${server.name}:`, pingResult)
+        const pingResult = await existingClient.ping({
+          // add short timeout to prevent hanging
+          timeout: 1000
+        })
+        getServerLogger(server).debug(`Ping result`, { ok: !!pingResult })
         // If the ping fails, remove the client from the cache
         // and create a new one
         if (!pingResult) {
@@ -146,8 +285,15 @@ class McpService {
           return existingClient
         }
       } catch (error: any) {
-        logger.error(`Error pinging server ${server.name}:`, error?.message)
+        getServerLogger(server).error(`Error pinging server ${server.name}`, error as Error)
         this.clients.delete(serverKey)
+      }
+    }
+
+    const prepareHeaders = () => {
+      return {
+        ...defaultAppHeaders(),
+        ...server.headers
       }
     }
 
@@ -171,16 +317,43 @@ class McpService {
           StdioClientTransport | SSEClientTransport | InMemoryTransport | StreamableHTTPClientTransport
         > => {
           // Create appropriate transport based on configuration
+
+          // Special case for nowledgeMem and flomo - uses HTTP transport instead of in-memory
+          if (
+            isBuiltinMCPServer(server) &&
+            (server.name === BuiltinMCPServerNames.nowledgeMem || server.name === BuiltinMCPServerNames.flomo)
+          ) {
+            const httpUrlMap: Record<string, string> = {
+              [BuiltinMCPServerNames.nowledgeMem]: 'http://127.0.0.1:14242/mcp',
+              [BuiltinMCPServerNames.flomo]: 'https://flomoapp.com/mcp'
+            }
+            const httpUrl = httpUrlMap[server.name]
+            const options: StreamableHTTPClientTransportOptions = {
+              fetch: async (url, init) => {
+                return net.fetch(typeof url === 'string' ? url : url.toString(), init)
+              },
+              requestInit: {
+                headers: {
+                  ...defaultAppHeaders(),
+                  APP: 'Cherry Studio'
+                }
+              },
+              authProvider
+            }
+            getServerLogger(server).debug(`Using StreamableHTTPClientTransport for ${server.name}`)
+            return new StreamableHTTPClientTransport(new URL(httpUrl), options)
+          }
+
           if (isBuiltinMCPServer(server) && server.name !== BuiltinMCPServerNames.mcpAutoInstall) {
-            logger.debug(`Using in-memory transport for server: ${server.name}`)
+            getServerLogger(server).debug(`Using in-memory transport`)
             const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
             // start the in-memory server with the given name and environment variables
             const inMemoryServer = createInMemoryMCPServer(server.name, args, server.env || {})
             try {
               await inMemoryServer.connect(serverTransport)
-              logger.debug(`In-memory server started: ${server.name}`)
-            } catch (error: Error | any) {
-              logger.error(`Error starting in-memory server: ${error}`)
+              getServerLogger(server).debug(`In-memory server started`)
+            } catch (error: any) {
+              getServerLogger(server).error(`Error starting in-memory server`, error as Error)
               throw new Error(`Failed to start in-memory server: ${error.message}`)
             }
             // set the client transport to the client
@@ -188,45 +361,41 @@ class McpService {
           } else if (server.baseUrl) {
             if (server.type === 'streamableHttp') {
               const options: StreamableHTTPClientTransportOptions = {
+                fetch: async (url, init) => {
+                  return net.fetch(typeof url === 'string' ? url : url.toString(), init)
+                },
                 requestInit: {
-                  headers: server.headers || {}
+                  headers: prepareHeaders()
                 },
                 authProvider
               }
-              logger.debug(`StreamableHTTPClientTransport options:`, options)
-              return new StreamableHTTPClientTransport(new URL(server.baseUrl!), options)
+              // redact headers before logging
+              getServerLogger(server).debug(`StreamableHTTPClientTransport options`, {
+                options: redactSensitive(options)
+              })
+              return new StreamableHTTPClientTransport(new URL(server.baseUrl), options)
             } else if (server.type === 'sse') {
               const options: SSEClientTransportOptions = {
                 eventSourceInit: {
                   fetch: async (url, init) => {
-                    const headers = { ...(server.headers || {}), ...(init?.headers || {}) }
-
-                    // Get tokens from authProvider to make sure using the latest tokens
-                    if (authProvider && typeof authProvider.tokens === 'function') {
-                      try {
-                        const tokens = await authProvider.tokens()
-                        if (tokens && tokens.access_token) {
-                          headers['Authorization'] = `Bearer ${tokens.access_token}`
-                        }
-                      } catch (error) {
-                        logger.error('Failed to fetch tokens:', error as Error)
-                      }
-                    }
-
-                    return net.fetch(typeof url === 'string' ? url : url.toString(), { ...init, headers })
+                    return net.fetch(typeof url === 'string' ? url : url.toString(), init)
                   }
                 },
                 requestInit: {
-                  headers: server.headers || {}
+                  headers: prepareHeaders()
                 },
                 authProvider
               }
-              return new SSEClientTransport(new URL(server.baseUrl!), options)
+              return new SSEClientTransport(new URL(server.baseUrl), options)
             } else {
               throw new Error('Invalid server type')
             }
           } else if (server.command) {
             let cmd = server.command
+
+            // Get login shell environment first - needed for command detection and server execution
+            // Note: getLoginShellEnvironment() is memoized, so subsequent calls are fast
+            const loginShellEnv = await getLoginShellEnvironment()
 
             // For DXT servers, use resolved configuration with platform overrides and variable substitution
             if (server.dxtPath) {
@@ -239,25 +408,55 @@ class McpService {
                   ...server.env,
                   ...resolvedConfig.env
                 }
-                logger.debug(`Using resolved DXT config - command: ${cmd}, args: ${args?.join(' ')}`)
+                getServerLogger(server).debug(`Using resolved DXT config`, {
+                  command: cmd,
+                  args
+                })
               } else {
-                logger.warn(`Failed to resolve DXT config for ${server.name}, falling back to manifest values`)
+                getServerLogger(server).warn(`Failed to resolve DXT config, falling back to manifest values`)
               }
             }
 
             if (server.command === 'npx') {
-              cmd = await getBinaryPath('bun')
-              logger.debug(`Using command: ${cmd}`)
+              // First, check if npx is available in user's shell environment
+              const npxPath = await findCommandInShellEnv('npx', loginShellEnv)
 
-              // add -x to args if args exist
-              if (args && args.length > 0) {
-                if (!args.includes('-y')) {
-                  args.unshift('-y')
-                }
-                if (!args.includes('x')) {
-                  args.unshift('x')
+              if (npxPath) {
+                // Use system npx
+                cmd = npxPath
+                getServerLogger(server).debug(`Using system npx`, { command: cmd })
+              } else {
+                // System npx not found, try bundled bun as fallback
+                getServerLogger(server).debug(`System npx not found, checking for bundled bun`)
+
+                if (await isBinaryExists('bun')) {
+                  // Fall back to bundled bun
+                  cmd = await getBinaryPath('bun')
+                  getServerLogger(server).info(`Using bundled bun as fallback (npx not found in PATH)`, {
+                    command: cmd
+                  })
+
+                  // Transform args for bun x format
+                  if (args && args.length > 0) {
+                    if (!args.includes('-y')) {
+                      args.unshift('-y')
+                    }
+                    if (!args.includes('x')) {
+                      args.unshift('x')
+                    }
+                  }
+                } else {
+                  // Neither npx nor bun available
+                  throw new Error(
+                    'npx not found in PATH and bundled bun is not available. This may indicate an installation issue.\n' +
+                      'Please either:\n' +
+                      '1. Install Node.js (which includes npx) from https://nodejs.org\n' +
+                      '2. Run the MCP dependencies installer from Settings\n' +
+                      '3. Restart the application if you recently installed Node.js'
+                  )
                 }
               }
+
               if (server.registryUrl) {
                 server.env = {
                   ...server.env,
@@ -272,7 +471,35 @@ class McpService {
                 }
               }
             } else if (server.command === 'uvx' || server.command === 'uv') {
-              cmd = await getBinaryPath(server.command)
+              // First, check if uvx/uv is available in user's shell environment
+              const uvPath = await findCommandInShellEnv(server.command, loginShellEnv)
+
+              if (uvPath) {
+                // Use system uvx/uv
+                cmd = uvPath
+                getServerLogger(server).debug(`Using system ${server.command}`, { command: cmd })
+              } else {
+                // System command not found, try bundled version as fallback
+                getServerLogger(server).debug(`System ${server.command} not found, checking for bundled version`)
+
+                if (await isBinaryExists(server.command)) {
+                  // Fall back to bundled version
+                  cmd = await getBinaryPath(server.command)
+                  getServerLogger(server).info(`Using bundled ${server.command} as fallback (not found in PATH)`, {
+                    command: cmd
+                  })
+                } else {
+                  // Neither system nor bundled available
+                  throw new Error(
+                    `${server.command} not found in PATH and bundled version is not available. This may indicate an installation issue.\n` +
+                      'Please either:\n' +
+                      '1. Install uv from https://github.com/astral-sh/uv\n' +
+                      '2. Run the MCP dependencies installer from Settings\n' +
+                      `3. Restart the application if you recently installed ${server.command}`
+                  )
+                }
+              }
+
               if (server.registryUrl) {
                 server.env = {
                   ...server.env,
@@ -282,16 +509,14 @@ class McpService {
               }
             }
 
-            logger.debug(`Starting server with command: ${cmd} ${args ? args.join(' ') : ''}`)
-            // Logger.info(`[MCP] Environment variables for server:`, server.env)
-            const loginShellEnv = await this.getLoginShellEnv()
+            getServerLogger(server).debug(`Starting server`, { command: cmd, args })
 
             // Bun not support proxy https://github.com/oven-sh/bun/issues/16812
             if (cmd.includes('bun')) {
               removeEnvProxy(loginShellEnv)
             }
 
-            const transportOptions: any = {
+            const transportOptions: StdioServerParameters = {
               command: cmd,
               args,
               env: {
@@ -304,13 +529,24 @@ class McpService {
             // For DXT servers, set the working directory to the extracted path
             if (server.dxtPath) {
               transportOptions.cwd = server.dxtPath
-              logger.debug(`Setting working directory for DXT server: ${server.dxtPath}`)
+              getServerLogger(server).debug(`Setting working directory for DXT server`, {
+                cwd: server.dxtPath
+              })
             }
 
             const stdioTransport = new StdioClientTransport(transportOptions)
-            stdioTransport.stderr?.on('data', (data) =>
-              logger.debug(`Stdio stderr for server: ${server.name}` + data.toString())
-            )
+            stdioTransport.stderr?.on('data', (data) => {
+              const msg = data.toString()
+              getServerLogger(server).debug(`Stdio stderr`, { data: msg })
+              this.emitServerLog(server, {
+                timestamp: Date.now(),
+                level: 'stderr',
+                message: msg.trim(),
+                source: 'stdio'
+              })
+            })
+            // StdioClientTransport does not expose stdout as a readable stream for raw logging
+            // (stdout is reserved for JSON-RPC). Avoid attaching a listener that would never fire.
             return stdioTransport
           } else {
             throw new Error('Either baseUrl or command must be provided')
@@ -318,7 +554,7 @@ class McpService {
         }
 
         const handleAuth = async (client: Client, transport: SSEClientTransport | StreamableHTTPClientTransport) => {
-          logger.debug(`Starting OAuth flow for server: ${server.name}`)
+          getServerLogger(server).debug(`Starting OAuth flow`)
           // Create an event emitter for the OAuth callback
           const events = new EventEmitter()
 
@@ -331,42 +567,50 @@ class McpService {
 
           // Set a timeout to close the callback server
           const timeoutId = setTimeout(() => {
-            logger.warn(`OAuth flow timed out for server: ${server.name}`)
-            callbackServer.close()
+            getServerLogger(server).warn(`OAuth flow timed out`)
+            void callbackServer.close()
           }, 300000) // 5 minutes timeout
 
           try {
             // Wait for the authorization code
             const authCode = await callbackServer.waitForAuthCode()
-            logger.debug(`Received auth code: ${authCode}`)
+            getServerLogger(server).debug(`Received auth code`)
 
             // Complete the OAuth flow
             await transport.finishAuth(authCode)
 
-            logger.debug(`OAuth flow completed for server: ${server.name}`)
+            getServerLogger(server).debug(`OAuth flow completed`)
 
             const newTransport = await initTransport()
             // Try to connect again
             await client.connect(newTransport)
 
-            logger.debug(`Successfully authenticated with server: ${server.name}`)
+            getServerLogger(server).debug(`Successfully authenticated`)
           } catch (oauthError) {
-            logger.error(`OAuth authentication failed for server ${server.name}:`, oauthError as Error)
+            getServerLogger(server).error(`OAuth authentication failed`, oauthError as Error)
             throw new Error(
               `OAuth authentication failed: ${oauthError instanceof Error ? oauthError.message : String(oauthError)}`
             )
           } finally {
             // Clear the timeout and close the callback server
             clearTimeout(timeoutId)
-            callbackServer.close()
+            void callbackServer.close()
           }
         }
 
         try {
           const transport = await initTransport()
+          // Bound the MCP `initialize` request so a non-responsive server fails fast via the
+          // SDK's own abort path instead of hanging. Use a 180s floor (activation runs once,
+          // generous headroom is cheap) while still honoring larger `server.timeout` values
+          // that the user explicitly configured. transport.start() latency remains bounded
+          // by the underlying fetch / child_process, matching v1.8.4 behavior.
+          const connectOptions: RequestOptions = {
+            timeout: Math.max((server.timeout ?? 0) * 1000, MCP_CONNECT_TIMEOUT_FLOOR_MS)
+          }
           try {
-            await client.connect(transport)
-          } catch (error: Error | any) {
+            await client.connect(transport, connectOptions)
+          } catch (error: any) {
             if (
               error instanceof Error &&
               (error.name === 'UnauthorizedError' || error.message.includes('Unauthorized'))
@@ -378,6 +622,13 @@ class McpService {
             }
           }
 
+          this.emitServerLog(server, {
+            timestamp: Date.now(),
+            level: 'info',
+            message: 'Server connected',
+            source: 'client'
+          })
+
           // Store the new client in the cache
           this.clients.set(serverKey, client)
 
@@ -388,10 +639,23 @@ class McpService {
           this.clearServerCache(serverKey)
 
           logger.debug(`Activated server: ${server.name}`)
+          this.emitServerLog(server, {
+            timestamp: Date.now(),
+            level: 'info',
+            message: 'Server activated',
+            source: 'client'
+          })
           return client
-        } catch (error: any) {
-          logger.error(`Error activating server ${server.name}:`, error?.message)
-          throw new Error(`[MCP] Error activating server ${server.name}: ${error.message}`)
+        } catch (error) {
+          getServerLogger(server).error(`Error activating server ${server.name}`, error as Error)
+          this.emitServerLog(server, {
+            timestamp: Date.now(),
+            level: 'error',
+            message: `Error activating server: ${(error as Error)?.message}`,
+            data: redactSensitive(error),
+            source: 'client'
+          })
+          throw error
         }
       } finally {
         // Clean up the pending promise when done
@@ -447,12 +711,24 @@ class McpService {
 
       // Set up logging message notification handler
       client.setNotificationHandler(LoggingMessageNotificationSchema, async (notification) => {
-        logger.debug(`Message from server ${server.name}:`, notification.params)
+        const data = notification.params?.data
+        const message = safeSerialize(notification.params.data) ?? 'No data'
+        logger.debug(`Message from server ${server.name}: ${message}`)
+        if (data) {
+          this.emitServerLog(server, {
+            timestamp: Date.now(),
+            // FIXME: as MCPServerLogEntry['level'] not type safe
+            level: (notification.params?.level as MCPServerLogEntry['level']) || 'info',
+            message,
+            data: redactSensitive(notification.params?.data),
+            source: notification.params?.logger || 'server'
+          })
+        }
       })
 
-      logger.debug(`Set up notification handlers for server: ${server.name}`)
+      getServerLogger(server).debug(`Set up notification handlers`)
     } catch (error) {
-      logger.error(`Failed to set up notification handlers for server ${server.name}:`, error as Error)
+      getServerLogger(server).error(`Failed to set up notification handlers`, error as Error)
     }
   }
 
@@ -470,7 +746,7 @@ class McpService {
     CacheService.remove(`mcp:list_tool:${serverKey}`)
     CacheService.remove(`mcp:list_prompts:${serverKey}`)
     CacheService.remove(`mcp:list_resources:${serverKey}`)
-    logger.debug(`Cleared all caches for server: ${serverKey}`)
+    logger.debug(`Cleared all caches for server`, { serverKey })
   }
 
   async closeClient(serverKey: string) {
@@ -478,18 +754,25 @@ class McpService {
     if (client) {
       // Remove the client from the cache
       await client.close()
-      logger.debug(`Closed server: ${serverKey}`)
+      logger.debug(`Closed server`, { serverKey })
       this.clients.delete(serverKey)
       // Clear all caches for this server
       this.clearServerCache(serverKey)
+      this.serverLogs.remove(serverKey)
     } else {
-      logger.warn(`No client found for server: ${serverKey}`)
+      logger.warn(`No client found for server`, { serverKey })
     }
   }
 
   async stopServer(_: Electron.IpcMainInvokeEvent, server: MCPServer) {
     const serverKey = this.getServerKey(server)
-    logger.debug(`Stopping server: ${server.name}`)
+    getServerLogger(server).debug(`Stopping server`)
+    this.emitServerLog(server, {
+      timestamp: Date.now(),
+      level: 'info',
+      message: 'Stopping server',
+      source: 'client'
+    })
     await this.closeClient(serverKey)
   }
 
@@ -505,17 +788,23 @@ class McpService {
       try {
         const cleaned = this.dxtService.cleanupDxtServer(server.name)
         if (cleaned) {
-          logger.debug(`Cleaned up DXT server directory for: ${server.name}`)
+          getServerLogger(server).debug(`Cleaned up DXT server directory`)
         }
       } catch (error) {
-        logger.error(`Failed to cleanup DXT server: ${server.name}`, error as Error)
+        getServerLogger(server).error(`Failed to cleanup DXT server`, error as Error)
       }
     }
   }
 
   async restartServer(_: Electron.IpcMainInvokeEvent, server: MCPServer) {
-    logger.debug(`Restarting server: ${server.name}`)
+    getServerLogger(server).debug(`Restarting server`)
     const serverKey = this.getServerKey(server)
+    this.emitServerLog(server, {
+      timestamp: Date.now(),
+      level: 'info',
+      message: 'Restarting server',
+      source: 'client'
+    })
     await this.closeClient(serverKey)
     // Clear cache before restarting to ensure fresh data
     this.clearServerCache(serverKey)
@@ -527,7 +816,7 @@ class McpService {
       try {
         await this.closeClient(key)
       } catch (error: any) {
-        logger.error(`Failed to close client: ${error?.message}`)
+        logger.error(`Failed to close client`, error as Error)
       }
     }
   }
@@ -536,9 +825,9 @@ class McpService {
    * Check connectivity for an MCP server
    */
   public async checkMcpConnectivity(_: Electron.IpcMainInvokeEvent, server: MCPServer): Promise<boolean> {
-    logger.debug(`Checking connectivity for server: ${server.name}`)
+    getServerLogger(server).debug(`Checking connectivity`)
     try {
-      logger.debug(`About to call initClient for server: ${server.name}`, { hasInitClient: !!this.initClient })
+      getServerLogger(server).debug(`About to call initClient`, { hasInitClient: !!this.initClient })
 
       if (!this.initClient) {
         throw new Error('initClient method is not available')
@@ -547,10 +836,23 @@ class McpService {
       const client = await this.initClient(server)
       // Attempt to list tools as a way to check connectivity
       await client.listTools()
-      logger.debug(`Connectivity check successful for server: ${server.name}`)
+      getServerLogger(server).debug(`Connectivity check successful`)
+      this.emitServerLog(server, {
+        timestamp: Date.now(),
+        level: 'info',
+        message: 'Connectivity check successful',
+        source: 'connectivity'
+      })
       return true
     } catch (error) {
-      logger.error(`Connectivity check failed for server: ${server.name}`, error as Error)
+      getServerLogger(server).error(`Connectivity check failed`, error as Error)
+      this.emitServerLog(server, {
+        timestamp: Date.now(),
+        level: 'error',
+        message: `Connectivity check failed: ${(error as Error).message}`,
+        data: redactSensitive(error),
+        source: 'connectivity'
+      })
       // Close the client if connectivity check fails to ensure a clean state for the next attempt
       const serverKey = this.getServerKey(server)
       await this.closeClient(serverKey)
@@ -559,25 +861,27 @@ class McpService {
   }
 
   private async listToolsImpl(server: MCPServer): Promise<MCPTool[]> {
-    logger.debug(`Listing tools for server: ${server.name}`)
     const client = await this.initClient(server)
-    logger.debug(`Client for server: ${server.name}`, client)
     try {
       const { tools } = await client.listTools()
       const serverTools: MCPTool[] = []
-      tools.map((tool: any) => {
+      tools.map((tool: SDKTool) => {
         const serverTool: MCPTool = {
           ...tool,
+          inputSchema: MCPToolInputSchema.parse(tool.inputSchema),
+          outputSchema: tool.outputSchema ? MCPToolOutputSchema.parse(tool.outputSchema) : undefined,
           id: buildFunctionCallToolName(server.name, tool.name),
           serverId: server.id,
-          serverName: server.name
+          serverName: server.name,
+          type: 'mcp'
         }
         serverTools.push(serverTool)
+        getServerLogger(server).debug(`Listing tools`, { tool: serverTool })
       })
       return serverTools
-    } catch (error: any) {
-      logger.error(`Failed to list tools for server: ${server.name}`, error?.message)
-      return []
+    } catch (error: unknown) {
+      getServerLogger(server).error(`Failed to list tools`, error as Error)
+      throw error
     }
   }
 
@@ -613,12 +917,16 @@ class McpService {
 
     const callToolFunc = async ({ server, name, args }: CallToolArgs) => {
       try {
-        logger.debug(`Calling: ${server.name} ${name} ${JSON.stringify(args)} callId: ${toolCallId}`, server)
+        getServerLogger(server, { tool: name, callId: toolCallId }).debug(`Calling tool`, {
+          args: redactSensitive(args)
+        })
         if (typeof args === 'string') {
           try {
             args = JSON.parse(args)
           } catch (e) {
-            logger.error('args parse error', args)
+            getServerLogger(server, { tool: name, callId: toolCallId }).error('args parse error', e as Error, {
+              args
+            })
           }
           if (args === '') {
             args = {}
@@ -627,11 +935,15 @@ class McpService {
         const client = await this.initClient(server)
         const result = await client.callTool({ name, arguments: args }, undefined, {
           onprogress: (process) => {
-            logger.debug(`Progress: ${process.progress / (process.total || 1)}`)
-            logger.debug(`Progress notification received for server: ${server.name}`, process)
+            getServerLogger(server, { tool: name, callId: toolCallId }).debug(`Progress`, {
+              ratio: process.progress / (process.total || 1)
+            })
             const mainWindow = windowService.getMainWindow()
             if (mainWindow) {
-              mainWindow.webContents.send('mcp-progress', process.progress / (process.total || 1))
+              mainWindow.webContents.send(IpcChannel.Mcp_Progress, {
+                callId: toolCallId,
+                progress: process.progress / (process.total || 1)
+              } as MCPProgressEvent)
             }
           },
           timeout: server.timeout ? server.timeout * 1000 : 60000, // Default timeout of 1 minute,
@@ -643,7 +955,7 @@ class McpService {
         })
         return result as MCPCallToolResponse
       } catch (error) {
-        logger.error(`Error calling tool ${name} on ${server.name}:`, error as Error)
+        getServerLogger(server, { tool: name, callId: toolCallId }).error(`Error calling tool`, error as Error)
         throw error
       } finally {
         this.activeToolCalls.delete(toolCallId)
@@ -654,7 +966,7 @@ class McpService {
   }
 
   public async getInstallInfo() {
-    const dir = path.join(os.homedir(), '.cherrystudio', 'bin')
+    const dir = path.join(os.homedir(), HOME_CHERRY_DIR, 'bin')
     const uvName = await getBinaryName('uv')
     const bunName = await getBinaryName('bun')
     const uvPath = path.join(dir, uvName)
@@ -667,7 +979,7 @@ class McpService {
    */
   private async listPromptsImpl(server: MCPServer): Promise<MCPPrompt[]> {
     const client = await this.initClient(server)
-    logger.debug(`Listing prompts for server: ${server.name}`)
+    getServerLogger(server).debug(`Listing prompts`)
     try {
       const { prompts } = await client.listPrompts()
       return prompts.map((prompt: any) => ({
@@ -676,10 +988,10 @@ class McpService {
         serverId: server.id,
         serverName: server.name
       }))
-    } catch (error: any) {
+    } catch (error: unknown) {
       // -32601 is the code for the method not found
-      if (error?.code !== -32601) {
-        logger.error(`Failed to list prompts for server: ${server.name}`, error?.message)
+      if (error instanceof McpError && error.code !== -32601) {
+        getServerLogger(server).error(`Failed to list prompts`, error as Error)
       }
       return []
     }
@@ -748,7 +1060,7 @@ class McpService {
     } catch (error: any) {
       // -32601 is the code for the method not found
       if (error?.code !== -32601) {
-        logger.error(`Failed to list resources for server: ${server.name}`, error?.message)
+        getServerLogger(server).error(`Failed to list resources`, error as Error)
       }
       return []
     }
@@ -774,7 +1086,7 @@ class McpService {
    * Get a specific resource from an MCP server (implementation)
    */
   private async getResourceImpl(server: MCPServer, uri: string): Promise<GetResourceResponse> {
-    logger.debug(`Getting resource ${uri} from server: ${server.name}`)
+    getServerLogger(server, { uri }).debug(`Getting resource`)
     const client = await this.initClient(server)
     try {
       const result = await client.readResource({ uri: uri })
@@ -791,8 +1103,8 @@ class McpService {
       return {
         contents: contents
       }
-    } catch (error: Error | any) {
-      logger.error(`Failed to get resource ${uri} from server: ${server.name}`, error.message)
+    } catch (error: any) {
+      getServerLogger(server, { uri }).error(`Failed to get resource`, error as Error)
       throw new Error(`Failed to get resource ${uri} from server: ${server.name}: ${error.message}`)
     }
   }
@@ -817,30 +1129,16 @@ class McpService {
     return await cachedGetResource(server, uri)
   }
 
-  private getLoginShellEnv = memoize(async (): Promise<Record<string, string>> => {
-    try {
-      const loginEnv = await getLoginShellEnvironment()
-      const pathSeparator = process.platform === 'win32' ? ';' : ':'
-      const cherryBinPath = path.join(os.homedir(), '.cherrystudio', 'bin')
-      loginEnv.PATH = `${loginEnv.PATH}${pathSeparator}${cherryBinPath}`
-      logger.debug('Successfully fetched login shell environment variables:')
-      return loginEnv
-    } catch (error) {
-      logger.error('Failed to fetch login shell environment variables:', error as Error)
-      return {}
-    }
-  })
-
   // 实现 abortTool 方法
   public async abortTool(_: Electron.IpcMainInvokeEvent, callId: string) {
     const activeToolCall = this.activeToolCalls.get(callId)
     if (activeToolCall) {
       activeToolCall.abort()
       this.activeToolCalls.delete(callId)
-      logger.debug(`Aborted tool call: ${callId}`)
+      logger.debug(`Aborted tool call`, { callId })
       return true
     } else {
-      logger.warn(`No active tool call found for callId: ${callId}`)
+      logger.warn(`No active tool call found for callId`, { callId })
       return false
     }
   }
@@ -850,22 +1148,22 @@ class McpService {
    */
   public async getServerVersion(_: Electron.IpcMainInvokeEvent, server: MCPServer): Promise<string | null> {
     try {
-      logger.debug(`Getting server version for: ${server.name}`)
+      getServerLogger(server).debug(`Getting server version`)
       const client = await this.initClient(server)
 
       // Try to get server information which may include version
       const serverInfo = client.getServerVersion()
-      logger.debug(`Server info for ${server.name}:`, serverInfo)
+      getServerLogger(server).debug(`Server info`, redactSensitive(serverInfo))
 
       if (serverInfo && serverInfo.version) {
-        logger.debug(`Server version for ${server.name}: ${serverInfo.version}`)
+        getServerLogger(server).debug(`Server version`, { version: serverInfo.version })
         return serverInfo.version
       }
 
-      logger.warn(`No version information available for server: ${server.name}`)
+      getServerLogger(server).warn(`No version information available`)
       return null
     } catch (error: any) {
-      logger.error(`Failed to get server version for ${server.name}:`, error?.message)
+      getServerLogger(server).error(`Failed to get server version`, error as Error)
       return null
     }
   }

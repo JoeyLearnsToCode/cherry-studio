@@ -1,6 +1,17 @@
-import { ExternalToolResult, KnowledgeReference, MCPToolResponse, ToolUseResponse, WebSearchResponse } from '.'
-import { Response, ResponseError } from './newMessage'
-import { SdkToolCall } from './sdk'
+import type { ExternalToolResult, KnowledgeReference, MCPToolResponse, NormalToolResponse, WebSearchResponse } from '.'
+import type { Response, ResponseError } from './newMessage'
+
+/**
+ * Provider metadata type for passing provider-specific data through chunks
+ * Currently used for passing thoughtSignature from Gemini through the chunk pipeline
+ */
+export interface ProviderMetadata {
+  google?: {
+    thoughtSignature?: string
+    [key: string]: unknown
+  }
+  [provider: string]: unknown
+}
 
 // Define Enum for Chunk Types
 // 目前用到的，并没有列出完整的生命周期
@@ -16,6 +27,7 @@ export enum ChunkType {
   MCP_TOOL_PENDING = 'mcp_tool_pending',
   MCP_TOOL_IN_PROGRESS = 'mcp_tool_in_progress',
   MCP_TOOL_COMPLETE = 'mcp_tool_complete',
+  MCP_TOOL_STREAMING = 'mcp_tool_streaming', // NEW: Streaming tool arguments
   EXTERNEL_TOOL_COMPLETE = 'externel_tool_complete',
   LLM_RESPONSE_CREATED = 'llm_response_created',
   LLM_RESPONSE_IN_PROGRESS = 'llm_response_in_progress',
@@ -37,7 +49,10 @@ export enum ChunkType {
   BLOCK_COMPLETE = 'block_complete',
   ERROR = 'error',
   SEARCH_IN_PROGRESS_UNION = 'search_in_progress_union',
-  SEARCH_COMPLETE_UNION = 'search_complete_union'
+  SEARCH_COMPLETE_UNION = 'search_complete_union',
+  VIDEO_SEARCHED = 'video.searched',
+  IMAGE_SEARCHED = 'image.searched',
+  RAW = 'raw'
 }
 
 export interface LLMResponseCreatedChunk {
@@ -70,6 +85,11 @@ export interface TextStartChunk {
    * The ID of the chunk
    */
   chunk_id?: number
+
+  /**
+   * Provider metadata for passing provider-specific data (e.g., thoughtSignature for Gemini)
+   */
+  providerMetadata?: ProviderMetadata
 }
 export interface TextDeltaChunk {
   /**
@@ -86,6 +106,11 @@ export interface TextDeltaChunk {
    * The type of the chunk
    */
   type: ChunkType.TEXT_DELTA
+
+  /**
+   * Provider metadata for passing provider-specific data (e.g., thoughtSignature for Gemini)
+   */
+  providerMetadata?: ProviderMetadata
 }
 
 export interface TextCompleteChunk {
@@ -103,6 +128,11 @@ export interface TextCompleteChunk {
    * The type of the chunk
    */
   type: ChunkType.TEXT_COMPLETE
+
+  /**
+   * Provider metadata for passing provider-specific data (e.g., thoughtSignature for Gemini)
+   */
+  providerMetadata?: ProviderMetadata
 }
 
 export interface AudioStartChunk {
@@ -284,15 +314,9 @@ export interface ExternalToolCompleteChunk {
   type: ChunkType.EXTERNEL_TOOL_COMPLETE
 }
 
-export interface MCPToolCreatedChunk {
-  type: ChunkType.MCP_TOOL_CREATED
-  tool_calls?: SdkToolCall[] // 工具调用
-  tool_use_responses?: ToolUseResponse[] // 工具使用响应
-}
-
 export interface MCPToolPendingChunk {
   type: ChunkType.MCP_TOOL_PENDING
-  responses: MCPToolResponse[]
+  responses: MCPToolResponse[] | NormalToolResponse[]
 }
 
 export interface MCPToolInProgressChunk {
@@ -303,19 +327,33 @@ export interface MCPToolInProgressChunk {
   /**
    * The tool responses of the chunk
    */
-  responses: MCPToolResponse[]
+  responses: MCPToolResponse[] | NormalToolResponse[]
 }
 
 export interface MCPToolCompleteChunk {
   /**
    * The tool response of the chunk
    */
-  responses: MCPToolResponse[]
+  responses: MCPToolResponse[] | NormalToolResponse[]
 
   /**
    * The type of the chunk
    */
   type: ChunkType.MCP_TOOL_COMPLETE
+}
+
+/**
+ * Streaming tool arguments chunk - emitted during tool-input-delta events
+ */
+export interface MCPToolStreamingChunk {
+  /**
+   * The type of the chunk
+   */
+  type: ChunkType.MCP_TOOL_STREAMING
+  /**
+   * The tool responses with streaming arguments
+   */
+  responses: (MCPToolResponse | NormalToolResponse)[]
 }
 
 export interface LLMResponseCompleteChunk {
@@ -379,6 +417,42 @@ export interface SearchCompleteUnionChunk {
   type: ChunkType.SEARCH_COMPLETE_UNION
 }
 
+export interface VideoSearchedChunk {
+  /**
+   * The type of the chunk
+   */
+  type: ChunkType.VIDEO_SEARCHED
+
+  /**
+   * The video content of the chunk
+   */
+  video?: { type: 'url' | 'path'; content: string }
+
+  metadata?: Record<string, any>
+}
+
+export interface ImageSearchedChunk {
+  /**
+   * The type of the chunk
+   */
+  type: ChunkType.IMAGE_SEARCHED
+
+  content: string
+
+  metadata: Record<string, any>
+}
+
+export interface RawChunk {
+  /**
+   * The type of the chunk
+   */
+  type: ChunkType.RAW
+
+  content: unknown
+
+  metadata?: Record<string, any>
+}
+
 export type Chunk =
   | BlockCreatedChunk // 消息块创建，无意义
   | BlockInProgressChunk // 消息块进行中，无意义
@@ -387,10 +461,10 @@ export type Chunk =
   | WebSearchCompleteChunk // 互联网搜索完成
   | KnowledgeSearchInProgressChunk // 知识库搜索进行中
   | KnowledgeSearchCompleteChunk // 知识库搜索完成
-  | MCPToolCreatedChunk // MCP工具被大模型创建
   | MCPToolPendingChunk // MCP工具调用等待中
   | MCPToolInProgressChunk // MCP工具调用中
   | MCPToolCompleteChunk // MCP工具调用完成
+  | MCPToolStreamingChunk // MCP工具参数流式传输中
   | ExternalToolCompleteChunk // 外部工具调用完成，外部工具包含搜索互联网，知识库，MCP服务器
   | LLMResponseCreatedChunk // 大模型响应创建，返回即将创建的块类型
   | LLMResponseInProgressChunk // 大模型响应进行中
@@ -413,3 +487,6 @@ export type Chunk =
   | ErrorChunk // 错误
   | SearchInProgressUnionChunk // 搜索(知识库/互联网)进行中
   | SearchCompleteUnionChunk // 搜索(知识库/互联网)完成
+  | VideoSearchedChunk // 知识库检索视频
+  | ImageSearchedChunk // 知识库检索图片
+  | RawChunk

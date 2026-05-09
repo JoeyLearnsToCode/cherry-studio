@@ -5,7 +5,7 @@ import React, { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useDebouncedRender } from './hooks/useDebouncedRender'
 import ImagePreviewLayout from './ImagePreviewLayout'
 import { ShadowTransparentContainer } from './styles'
-import { BasicPreviewHandles, BasicPreviewProps } from './types'
+import type { BasicPreviewHandles, BasicPreviewProps } from './types'
 import { renderSvgInShadowHost } from './utils'
 
 /**
@@ -56,6 +56,7 @@ const MermaidPreview = ({
         document.body.removeChild(measureEl)
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [diagramId, mermaid, forceRenderKey]
   )
 

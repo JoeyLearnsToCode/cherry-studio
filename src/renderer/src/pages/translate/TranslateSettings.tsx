@@ -2,14 +2,16 @@ import LanguageSelect from '@renderer/components/LanguageSelect'
 import { HStack } from '@renderer/components/Layout'
 import db from '@renderer/databases'
 import useTranslate from '@renderer/hooks/useTranslate'
-import { AutoDetectionMethod, Model, TranslateLanguage } from '@renderer/types'
+import type { AutoDetectionMethod, Model, TranslateLanguage } from '@renderer/types'
 import { Button, Flex, Modal, Radio, Space, Switch, Tooltip } from 'antd'
 import { HelpCircle } from 'lucide-react'
-import { FC, memo, useEffect, useState } from 'react'
+import type { FC } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import TranslateSettingsPopup from '../settings/TranslateSettingsPopup/TranslateSettingsPopup'
 
+// TODO: Just don't send so many props. Migrate them to redux.
 const TranslateSettings: FC<{
   visible: boolean
   onClose: () => void
@@ -40,7 +42,8 @@ const TranslateSettings: FC<{
 }) => {
   const { t } = useTranslation()
   const [localPair, setLocalPair] = useState<[TranslateLanguage, TranslateLanguage]>(bidirectionalPair)
-  const { getLanguageByLangcode } = useTranslate()
+  const { getLanguageByLangcode, settings, updateSettings } = useTranslate()
+  const { autoCopy } = settings
 
   useEffect(() => {
     setLocalPair(bidirectionalPair)
@@ -48,7 +51,7 @@ const TranslateSettings: FC<{
 
   const onMoreSetting = () => {
     onClose()
-    TranslateSettingsPopup.show()
+    void TranslateSettingsPopup.show()
   }
 
   return (
@@ -58,7 +61,7 @@ const TranslateSettings: FC<{
       onCancel={onClose}
       centered={true}
       footer={null}
-      width={420}
+      width={520}
       transitionName="animation-move-down">
       <Flex vertical gap={16} style={{ marginTop: 16, paddingBottom: 20 }}>
         <div>
@@ -68,10 +71,17 @@ const TranslateSettings: FC<{
               checked={enableMarkdown}
               onChange={(checked) => {
                 setEnableMarkdown(checked)
-                db.settings.put({ id: 'translate:markdown:enabled', value: checked })
+                void db.settings.put({ id: 'translate:markdown:enabled', value: checked })
               }}
             />
           </Flex>
+        </div>
+
+        <div>
+          <HStack alignItems="center" justifyContent="space-between">
+            <div style={{ fontWeight: 500 }}>{t('translate.settings.autoCopy')}</div>
+            <Switch checked={autoCopy} onChange={(checked) => updateSettings({ autoCopy: checked })} />
+          </HStack>
         </div>
 
         <div>
@@ -81,7 +91,7 @@ const TranslateSettings: FC<{
               checked={isScrollSyncEnabled}
               onChange={(checked) => {
                 setIsScrollSyncEnabled(checked)
-                db.settings.put({ id: 'translate:scroll:sync', value: checked })
+                void db.settings.put({ id: 'translate:scroll:sync', value: checked })
               }}
             />
           </Flex>
@@ -147,15 +157,12 @@ const TranslateSettings: FC<{
                   onChange={(value) => {
                     const newPair: [TranslateLanguage, TranslateLanguage] = [getLanguageByLangcode(value), localPair[1]]
                     if (newPair[0] === newPair[1]) {
-                      window.message.warning({
-                        content: t('translate.language.same'),
-                        key: 'translate-message'
-                      })
+                      window.toast.warning(t('translate.language.same'))
                       return
                     }
                     setLocalPair(newPair)
                     setBidirectionalPair(newPair)
-                    db.settings.put({
+                    void db.settings.put({
                       id: 'translate:bidirectional:pair',
                       value: [newPair[0].langCode, newPair[1].langCode]
                     })
@@ -168,15 +175,12 @@ const TranslateSettings: FC<{
                   onChange={(value) => {
                     const newPair: [TranslateLanguage, TranslateLanguage] = [localPair[0], getLanguageByLangcode(value)]
                     if (newPair[0] === newPair[1]) {
-                      window.message.warning({
-                        content: t('translate.language.same'),
-                        key: 'translate-message'
-                      })
+                      window.toast.warning(t('translate.language.same'))
                       return
                     }
                     setLocalPair(newPair)
                     setBidirectionalPair(newPair)
-                    db.settings.put({
+                    void db.settings.put({
                       id: 'translate:bidirectional:pair',
                       value: [newPair[0].langCode, newPair[1].langCode]
                     })

@@ -1,6 +1,6 @@
 import store from '@renderer/store'
 import { formatCitationsFromBlock, messageBlocksSelectors } from '@renderer/store/messageBlock'
-import { FileMetadata } from '@renderer/types'
+import type { FileMetadata } from '@renderer/types'
 import type {
   CitationMessageBlock,
   FileMessageBlock,
@@ -117,7 +117,7 @@ export const findFileBlocks = (message: Message): FileMessageBlock[] => {
 export const getMainTextContent = (message: Message): string => {
   // 对于用户消息，优先使用版本管理中的生效版本内容
   if (message.role === 'user' && message.versions && message.activeVersionId) {
-    const activeVersion = message.versions.find(v => v.id === message.activeVersionId)
+    const activeVersion = message.versions.find((v) => v.id === message.activeVersionId)
     if (activeVersion) {
       return activeVersion.content
     }
@@ -138,7 +138,7 @@ export const getActiveMessageContent = (message: Message): string => {
 
   // 如果有版本信息且指定了生效版本
   if (message.versions && message.activeVersionId) {
-    const activeVersion = message.versions.find(v => v.id === message.activeVersionId)
+    const activeVersion = message.versions.find((v) => v.id === message.activeVersionId)
     if (activeVersion) {
       return activeVersion.content
     }
@@ -162,7 +162,7 @@ export const getActiveVersionIndex = (message: Message): number => {
     return -1
   }
   const sortedVersions = getSortedVersions(message)
-  return sortedVersions.findIndex(v => v.id === message.activeVersionId)
+  return sortedVersions.findIndex((v) => v.id === message.activeVersionId)
 }
 
 // 获取版本总数

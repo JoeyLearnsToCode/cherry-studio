@@ -5,6 +5,16 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { DraggableList } from '../'
 
+vi.mock('@renderer/store', () => ({
+  default: {
+    getState: () => ({
+      llm: {
+        settings: {}
+      }
+    })
+  }
+}))
+
 // mock @hello-pangea/dnd 组件
 vi.mock('@hello-pangea/dnd', () => {
   return {
@@ -71,8 +81,9 @@ describe('DraggableList', () => {
     })
 
     it('should render nothing when list is empty', () => {
+      const emptyList: Array<{ id: string; name: string }> = []
       render(
-        <DraggableList list={[]} onUpdate={() => {}}>
+        <DraggableList list={emptyList} onUpdate={() => {}}>
           {(item) => <div data-testid="item">{item.name}</div>}
         </DraggableList>
       )

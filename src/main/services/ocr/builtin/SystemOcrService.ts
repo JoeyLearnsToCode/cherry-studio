@@ -1,12 +1,8 @@
 import { isLinux, isWin } from '@main/constant'
 import { loadOcrImage } from '@main/utils/ocr'
-import {
-  ImageFileMetadata,
-  isImageFileMetadata as isImageFileMetadata,
-  OcrResult,
-  OcrSystemConfig,
-  SupportedOcrFile
-} from '@types'
+import { OcrAccuracy, recognize } from '@napi-rs/system-ocr'
+import type { ImageFileMetadata, OcrResult, OcrSystemConfig, SupportedOcrFile } from '@types'
+import { isImageFileMetadata } from '@types'
 
 import { OcrBaseService } from './OcrBaseService'
 
@@ -20,8 +16,6 @@ export class SystemOcrService extends OcrBaseService {
     if (isLinux) {
       return { text: '' }
     }
-
-    const { OcrAccuracy, recognize } = require('@napi-rs/system-ocr')
     const buffer = await loadOcrImage(file)
     const langs = isWin ? options?.langs : undefined
     const result = await recognize(buffer, OcrAccuracy.Accurate, langs)

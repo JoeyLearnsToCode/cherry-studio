@@ -2,12 +2,13 @@ import { InfoCircleOutlined } from '@ant-design/icons'
 import { CopyIcon, EditIcon, RefreshIcon } from '@renderer/components/Icons'
 import ObsidianExportPopup from '@renderer/components/Popups/ObsidianExportPopup'
 import SaveToKnowledgePopup from '@renderer/components/Popups/SaveToKnowledgePopup'
-import SelectModelPopup from '@renderer/components/Popups/SelectModelPopup'
+import { SelectModelPopup } from '@renderer/components/Popups/SelectModelPopup'
 import { isEmbeddingModel, isRerankModel, isVisionModel } from '@renderer/config/models'
 import { useMessageEditing } from '@renderer/context/MessageEditingContext'
 import { useChatContext } from '@renderer/hooks/useChatContext'
 import { useMessageOperations, useTopicLoading } from '@renderer/hooks/useMessageOperations'
 import { useNotesSettings } from '@renderer/hooks/useNotesSettings'
+import { useAllProviders } from '@renderer/hooks/useProvider'
 import { useEnableDeveloperMode } from '@renderer/hooks/useSettings'
 import { useTemporaryValue } from '@renderer/hooks/useTemporaryValue'
 import useTranslate from '@renderer/hooks/useTranslate'
@@ -40,7 +41,19 @@ import {
 } from '@renderer/utils/messageUtils/find'
 import { MenuProps } from 'antd'
 import dayjs from 'dayjs'
-import { AtSign, Check, FilePenLine, Languages, ListChecks, MessageSquarePlus, Save, Split, ThumbsUp, Trash2, Upload } from 'lucide-react'
+import {
+  AtSign,
+  Check,
+  FilePenLine,
+  Languages,
+  ListChecks,
+  MessageSquarePlus,
+  Save,
+  Split,
+  ThumbsUp,
+  Trash2,
+  Upload
+} from 'lucide-react'
 import React, { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSelector } from 'react-redux'
@@ -62,6 +75,7 @@ interface UseMessageMenuItemsProps {
 }
 
 export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
+  const allProviders = useAllProviders()
   const {
     message,
     index,
@@ -117,7 +131,7 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
         contentToCopy = getMainTextContent(message)
       }
       navigator.clipboard.writeText(removeTrailingDoubleSpaces(contentToCopy.trimStart()))
-      window.message.success({ content: t('message.copied'), key: 'copy-message' })
+      window.toast.success({ title: t('message.copied'), key: 'copy-message' })
       setCopied(true)
     },
     [message, setCopied, t]
@@ -126,7 +140,7 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
   const onNewBranch = useCallback(async () => {
     if (loading) return
     EventEmitter.emit(EVENT_NAMES.NEW_BRANCH, index)
-    window.message.success({ content: t('chat.message.new.branch.created'), key: 'new-branch' })
+    window.toast.success({ title: t('chat.message.new.branch.created'), key: 'new-branch' })
   }, [index, t, loading])
 
   const handleResendUserMessage = useCallback(
@@ -151,7 +165,7 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
       try {
         await translateText(mainTextContent, language, translationUpdater)
       } catch (error) {
-        window.message.error({ content: t('translate.error.failed'), key: 'translate-message' })
+        window.toast.error({ title: t('translate.error.failed'), key: 'translate-message' })
         const translationBlocks = findTranslationBlocksById(message.id)
         if (translationBlocks.length > 0) {
           const block = translationBlocks[0]
@@ -243,7 +257,7 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
   }, [message.role, message.blocks])
 
   const onMentionModel = useCallback(async () => {
-    const selectedModel = await SelectModelPopup.show({ model, filter: mentionModelFilter })
+    const selectedModel = await SelectModelPopup.show({ model, providers: allProviders })
     if (!selectedModel) return
     appendAssistantResponse(message, selectedModel, { ...assistant, model: selectedModel })
   }, [appendAssistantResponse, assistant, mentionModelFilter, message, model])
@@ -254,7 +268,7 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
   }, [appendAssistantResponse, assistant, message, model])
 
   const onRespondToUserMessage = useCallback(async () => {
-    const selectedModel = await SelectModelPopup.show({ model, filter: userMessageModelFilter })
+    const selectedModel = await SelectModelPopup.show({ model, providers: allProviders })
     if (!selectedModel) return
     respondToUserMessage(message, selectedModel, { ...assistant, model: selectedModel })
   }, [respondToUserMessage, assistant, userMessageModelFilter, message, model])
@@ -460,9 +474,9 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
                       .trim()
                     if (translationContent) {
                       navigator.clipboard.writeText(translationContent)
-                      window.message.success({ content: t('translate.copied'), key: 'translate-copy' })
+                      window.toast.success({ title: t('translate.copied'), key: 'translate-copy' })
                     } else {
-                      window.message.warning({ content: t('translate.empty'), key: 'translate-copy' })
+                      window.toast.warning({ title: t('translate.empty'), key: 'translate-copy' })
                     }
                   }
                 }
@@ -479,7 +493,7 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
                     translationBlocks.forEach((blockId) => {
                       if (blockId) removeMessageBlock(message.id, blockId)
                     })
-                    window.message.success({ content: t('translate.closed'), key: 'translate-close' })
+                    window.toast.success({ title: t('translate.closed'), key: 'translate-close' })
                   }
                 }
               }
@@ -487,7 +501,16 @@ export function useMessageMenuItems(props: UseMessageMenuItemsProps) {
           : [])
       ]
     }),
-    [t, translateLanguages, handleTranslate, hasTranslationBlocks, message.blocks, blockEntities, message.id, removeMessageBlock]
+    [
+      t,
+      translateLanguages,
+      handleTranslate,
+      hasTranslationBlocks,
+      message.blocks,
+      blockEntities,
+      message.id,
+      removeMessageBlock
+    ]
   )
 
   const contextMenuItems = useMemo(

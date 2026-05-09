@@ -8,7 +8,7 @@ import store from '@renderer/store'
 import { messageBlocksSelectors, removeManyBlocks } from '@renderer/store/messageBlock'
 import { selectMessagesForTopic } from '@renderer/store/newMessage'
 import type { Assistant, FileMetadata, Model, Topic, Usage } from '@renderer/types'
-import { FileTypes } from '@renderer/types'
+import { FILE_TYPE } from '@renderer/types'
 import type { Message, MessageBlock, MessageVersion } from '@renderer/types/newMessage'
 import { AssistantMessageStatus, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import { uuid } from '@renderer/utils'
@@ -25,7 +25,7 @@ import { filterContextMessages } from '@renderer/utils/messageUtils/filters'
 import { getMainTextContent } from '@renderer/utils/messageUtils/find'
 import dayjs from 'dayjs'
 import { t } from 'i18next'
-import { NavigateFunction } from 'react-router'
+import type { NavigateFunction } from 'react-router'
 
 import { getAssistantById, getAssistantProvider, getDefaultModel } from './AssistantService'
 import { EVENT_NAMES, EventEmitter } from './EventService'
@@ -36,6 +36,7 @@ const logger = loggerService.withContext('MessagesService')
 export {
   filterAfterContextClearMessages,
   filterEmptyMessages,
+  filterErrorOnlyMessagesWithRelated,
   filterMessages,
   filterUsefulMessages,
   filterUserRoleStartMessages,
@@ -54,23 +55,41 @@ export function getContextCount(assistant: Assistant, messages: Message[]) {
   }
 }
 
-export function deleteMessageFiles(message: Message) {
+/** @deprecated Use safeDeleteFiles instead */
+export async function deleteMessageFiles(message: Message) {
   const state = store.getState()
+  const fileDataList: FileMetadata[] = []
+
   message.blocks?.forEach((blockId) => {
     const block = messageBlocksSelectors.selectById(state, blockId)
     if (block && (block.type === MessageBlockType.IMAGE || block.type === MessageBlockType.FILE)) {
       const fileData = (block as any).file as FileMetadata | undefined
       if (fileData) {
-        FileManager.deleteFiles([fileData])
+        fileDataList.push(fileData)
       }
     }
   })
+
+  if (fileDataList.length > 0) {
+    await FileManager.deleteFiles(fileDataList)
+  }
+}
+
+// 删除列表中的文件
+export async function safeDeleteFiles(filesToDelete: FileMetadata[]): Promise<void> {
+  if (!filesToDelete || filesToDelete.length === 0) return
+
+  try {
+    await FileManager.deleteFiles(filesToDelete)
+  } catch (error) {
+    logger.error('Failed to delete files, may produce orphan files:', error as Error)
+  }
 }
 
 export function isGenerating() {
   return new Promise((resolve, reject) => {
     const generating = store.getState().runtime.generating
-    generating && window.message.warning({ content: i18n.t('message.switch.disabled'), key: 'switch-assistant' })
+    generating && window.toast.warning(i18n.t('message.switch.disabled'))
     generating ? reject(false) : resolve(true)
   })
 }
@@ -131,7 +150,7 @@ export function getUserMessage({
   }
   if (files?.length) {
     files.forEach((file) => {
-      if (file.type === FileTypes.IMAGE) {
+      if (file.type === FILE_TYPE.IMAGE) {
         const imgBlock = createImageBlock(messageId, { file, status: MessageBlockStatus.SUCCESS })
         blocks.push(imgBlock)
         blockIds.push(imgBlock.id)
@@ -211,29 +230,24 @@ export async function getMessageTitle(message: Message, length = 30): Promise<st
 
   if ((store.getState().settings as any).useTopicNamingForMessageTitle) {
     try {
-      window.message.loading({
-        content: t('chat.topics.export.wait_for_title_naming'),
-        key: 'message-title-naming',
-        duration: 0
-      })
-
       const tempMessage = resetMessage(message, {
         status: AssistantMessageStatus.SUCCESS,
         blocks: message.blocks
       })
 
-      const title = await fetchMessagesSummary({ messages: [tempMessage], assistant: {} as Assistant })
+      const titlePromise = fetchMessagesSummary({ messages: [tempMessage] })
+      window.toast.loading({ title: t('chat.topics.export.wait_for_title_naming'), promise: titlePromise })
+      const { text: title } = await titlePromise
 
       // store.dispatch(messageBlocksActions.upsertOneBlock(tempTextBlock))
 
       // store.dispatch(messageBlocksActions.removeOneBlock(tempTextBlock.id))
-      window.message.destroy('message-title-naming')
       if (title) {
-        window.message.success({ content: t('chat.topics.export.title_naming_success'), key: 'message-title-naming' })
+        window.toast.success(t('chat.topics.export.title_naming_success'))
         return title
       }
     } catch (e) {
-      window.message.error({ content: t('chat.topics.export.title_naming_failed'), key: 'message-title-naming' })
+      window.toast.error(t('chat.topics.export.title_naming_failed'))
       logger.error('Failed to generate title using topic naming, downgraded to default logic', e as Error)
     }
   }
@@ -270,11 +284,7 @@ export function checkRateLimit(assistant: Assistant): boolean {
   if (timeDiff < rateLimitMs) {
     const waitTimeSeconds = Math.ceil((rateLimitMs - timeDiff) / 1000)
 
-    window.message.warning({
-      content: t('message.warning.rate.limit', { seconds: waitTimeSeconds }),
-      duration: 5,
-      key: 'rate-limit-message'
-    })
+    window.toast.warning(t('message.warning.rate.limit', { seconds: waitTimeSeconds }))
     return true
   }
 

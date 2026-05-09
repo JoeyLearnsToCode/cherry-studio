@@ -8,11 +8,44 @@ export function getResourcePath() {
   return path.join(app.getAppPath(), 'resources')
 }
 
-export function getDataPath() {
+export function toAsarUnpackedPath(filePath: string): string {
+  if (!app.isPackaged) {
+    return filePath
+  }
+
+  const appPath = app.getAppPath()
+  if (!appPath.endsWith('.asar')) {
+    return filePath
+  }
+
+  const unpackedAppPath = appPath.replace(/\.asar$/, '.asar.unpacked')
+  if (filePath === appPath) {
+    return unpackedAppPath
+  }
+
+  const appPathPrefix = `${appPath}${path.sep}`
+  if (!filePath.startsWith(appPathPrefix)) {
+    return filePath
+  }
+
+  return path.join(unpackedAppPath, path.relative(appPath, filePath))
+}
+
+export function getDataPath(subPath?: string) {
   const dataPath = path.join(app.getPath('userData'), 'Data')
+
   if (!fs.existsSync(dataPath)) {
     fs.mkdirSync(dataPath, { recursive: true })
   }
+
+  if (subPath) {
+    const fullPath = path.join(dataPath, subPath)
+    if (!fs.existsSync(fullPath)) {
+      fs.mkdirSync(fullPath, { recursive: true })
+    }
+    return fullPath
+  }
+
   return dataPath
 }
 
@@ -36,15 +69,16 @@ export function debounce(func: (...args: any[]) => void, wait: number, immediate
   }
 }
 
-export function dumpPersistState() {
-  const persistState = JSON.parse(localStorage.getItem('persist:cherry-studio') || '{}')
-  for (const key in persistState) {
-    persistState[key] = JSON.parse(persistState[key])
-  }
-  return JSON.stringify(persistState)
-}
+// NOTE: It's an unused function. localStorage should not be accessed in main process.
+// export function dumpPersistState() {
+//   const persistState = JSON.parse(localStorage.getItem('persist:cherry-studio') || '{}')
+//   for (const key in persistState) {
+//     persistState[key] = JSON.parse(persistState[key])
+//   }
+//   return JSON.stringify(persistState)
+// }
 
-export const runAsyncFunction = async (fn: () => void) => {
+export const runAsyncFunction = async (fn: () => Promise<void>) => {
   await fn()
 }
 

@@ -1,10 +1,13 @@
 import { loggerService } from '@logger'
 import { builtinLanguages, UNKNOWN } from '@renderer/config/translate'
 import { useAppSelector } from '@renderer/store'
-import { TranslateLanguage } from '@renderer/types'
+import type { TranslateState } from '@renderer/store/translate'
+import { updateSettings } from '@renderer/store/translate'
+import type { TranslateLanguage } from '@renderer/types'
 import { runAsyncFunction } from '@renderer/utils'
 import { getTranslateOptions } from '@renderer/utils/translate'
 import { useCallback, useEffect, useState } from 'react'
+import { useDispatch } from 'react-redux'
 
 const logger = loggerService.withContext('useTranslate')
 
@@ -17,11 +20,14 @@ const logger = loggerService.withContext('useTranslate')
  */
 export default function useTranslate() {
   const prompt = useAppSelector((state) => state.settings.translateModelPrompt)
+  const settings = useAppSelector((state) => state.translate.settings)
   const [translateLanguages, setTranslateLanguages] = useState<TranslateLanguage[]>(builtinLanguages)
   const [isLoaded, setIsLoaded] = useState(false)
 
+  const dispatch = useDispatch()
+
   useEffect(() => {
-    runAsyncFunction(async () => {
+    void runAsyncFunction(async () => {
       const options = await getTranslateOptions()
       setTranslateLanguages(options)
       setIsLoaded(true)
@@ -30,25 +36,33 @@ export default function useTranslate() {
 
   const getLanguageByLangcode = useCallback(
     (langCode: string) => {
-      if (!isLoaded) {
-        logger.verbose('Translate languages are not loaded yet. Return UNKNOWN.')
-        return UNKNOWN
-      }
-
       const result = translateLanguages.find((item) => item.langCode === langCode)
+
       if (result) {
         return result
+      } else if (!isLoaded) {
+        logger.verbose('Translate languages are not loaded yet. Return UNKNOWN.')
       } else {
         logger.warn(`Unknown language ${langCode}`)
-        return UNKNOWN
       }
+      return UNKNOWN
     },
     [isLoaded, translateLanguages]
   )
 
+  const handleUpdateSettings = useCallback(
+    (update: Partial<TranslateState['settings']>) => {
+      dispatch(updateSettings(update))
+    },
+    [dispatch]
+  )
+
   return {
     prompt,
+    settings,
     translateLanguages,
-    getLanguageByLangcode
+    isLoaded,
+    getLanguageByLangcode,
+    updateSettings: handleUpdateSettings
   }
 }

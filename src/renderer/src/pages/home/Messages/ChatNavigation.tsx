@@ -5,9 +5,11 @@ import {
   VerticalAlignBottomOutlined,
   VerticalAlignTopOutlined
 } from '@ant-design/icons'
-import { RootState } from '@renderer/store'
+import type { RootState } from '@renderer/store'
+import { scrollIntoView } from '@renderer/utils/dom'
 import { Button, Drawer, Tooltip } from 'antd'
-import { FC, useState } from 'react'
+import type { FC } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSelector } from 'react-redux'
 import styled from 'styled-components'
@@ -43,7 +45,8 @@ const ChatNavigation: FC<ChatNavigationProps> = ({ containerId, position = 'righ
   }
 
   const scrollToMessage = (element: HTMLElement) => {
-    element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    // Use container: 'nearest' to keep scroll within the chat pane (Chromium-only, see #11565, #11567)
+    scrollIntoView(element, { behavior: 'smooth', block: 'start', container: 'nearest' })
   }
 
   const scrollToTop = () => {
@@ -140,7 +143,10 @@ const ChatNavigation: FC<ChatNavigationProps> = ({ containerId, position = 'righ
     <>
       <NavigationContainer $position={position}>
         <ButtonGroup>
-          <Tooltip title={t('chat.navigation.top')} placement={position === 'left' ? 'right' : 'left'} mouseEnterDelay={0.5}>
+          <Tooltip
+            title={t('chat.navigation.top')}
+            placement={position === 'left' ? 'right' : 'left'}
+            mouseEnterDelay={0.5}>
             <NavigationButton
               type="text"
               icon={<VerticalAlignTopOutlined />}
@@ -149,7 +155,10 @@ const ChatNavigation: FC<ChatNavigationProps> = ({ containerId, position = 'righ
             />
           </Tooltip>
           <Divider />
-          <Tooltip title={t('chat.navigation.prev')} placement={position === 'left' ? 'right' : 'left'} mouseEnterDelay={0.5}>
+          <Tooltip
+            title={t('chat.navigation.prev')}
+            placement={position === 'left' ? 'right' : 'left'}
+            mouseEnterDelay={0.5}>
             <NavigationButton
               type="text"
               icon={<ArrowUpOutlined />}
@@ -158,7 +167,10 @@ const ChatNavigation: FC<ChatNavigationProps> = ({ containerId, position = 'righ
             />
           </Tooltip>
           <Divider />
-          <Tooltip title={t('chat.navigation.next')} placement={position === 'left' ? 'right' : 'left'} mouseEnterDelay={0.5}>
+          <Tooltip
+            title={t('chat.navigation.next')}
+            placement={position === 'left' ? 'right' : 'left'}
+            mouseEnterDelay={0.5}>
             <NavigationButton
               type="text"
               icon={<ArrowDownOutlined />}
@@ -167,7 +179,10 @@ const ChatNavigation: FC<ChatNavigationProps> = ({ containerId, position = 'righ
             />
           </Tooltip>
           <Divider />
-          <Tooltip title={t('chat.navigation.bottom')} placement={position === 'left' ? 'right' : 'left'} mouseEnterDelay={0.5}>
+          <Tooltip
+            title={t('chat.navigation.bottom')}
+            placement={position === 'left' ? 'right' : 'left'}
+            mouseEnterDelay={0.5}>
             <NavigationButton
               type="text"
               icon={<VerticalAlignBottomOutlined />}
@@ -176,7 +191,10 @@ const ChatNavigation: FC<ChatNavigationProps> = ({ containerId, position = 'righ
             />
           </Tooltip>
           <Divider />
-          <Tooltip title={t('chat.navigation.history')} placement={position === 'left' ? 'right' : 'left'} mouseEnterDelay={0.5}>
+          <Tooltip
+            title={t('chat.navigation.history')}
+            placement={position === 'left' ? 'right' : 'left'}
+            mouseEnterDelay={0.5}>
             <NavigationButton
               type="text"
               icon={<HistoryOutlined />}
@@ -219,14 +237,17 @@ const NavigationContainer = styled.div<NavigationContainerProps>`
   z-index: 999;
 `
 
-const ButtonGroup = styled.div`
+interface ButtonGroupProps {
+  $isVisible?: boolean
+}
+
+const ButtonGroup = styled.div<ButtonGroupProps>`
   display: flex;
   flex-direction: column;
   background: var(--bg-color);
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   overflow: hidden;
-  backdrop-filter: blur(8px);
   border: 1px solid var(--color-border);
 `
 

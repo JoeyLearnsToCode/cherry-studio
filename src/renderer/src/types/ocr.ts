@@ -1,10 +1,13 @@
-import Tesseract from 'tesseract.js'
+import type Tesseract from 'tesseract.js'
 
-import { FileMetadata, ImageFileMetadata, isImageFileMetadata, TranslateLanguageCode } from '.'
+import type { FileMetadata, ImageFileMetadata, TranslateLanguageCode } from '.'
+import { isImageFileMetadata } from '.'
 
 export const BuiltinOcrProviderIds = {
   tesseract: 'tesseract',
-  system: 'system'
+  system: 'system',
+  paddleocr: 'paddleocr',
+  ovocr: 'ovocr'
 } as const
 
 export type BuiltinOcrProviderId = keyof typeof BuiltinOcrProviderIds
@@ -74,7 +77,7 @@ export type OcrProviderBaseConfig = {
   enabled?: boolean
 }
 
-export type OcrProviderConfig = OcrApiProviderConfig | OcrTesseractConfig | OcrSystemConfig
+export type OcrProviderConfig = OcrApiProviderConfig | OcrTesseractConfig | OcrSystemConfig | OcrPpocrConfig
 
 export type OcrProvider = {
   id: string
@@ -103,7 +106,7 @@ export const isBuiltinOcrProvider = (p: OcrProvider): p is BuiltinOcrProvider =>
   return isBuiltinOcrProviderId(p.id)
 }
 
-// Not sure compatiable api endpoint exists. May not support custom ocr provider
+// Not sure compatible api endpoint exists. May not support custom ocr provider
 export type CustomOcrProvider = OcrProvider & {
   id: Exclude<string, BuiltinOcrProviderId>
 }
@@ -169,4 +172,37 @@ export type OcrSystemProvider = {
 
 export const isOcrSystemProvider = (p: OcrProvider): p is OcrSystemProvider => {
   return p.id === BuiltinOcrProviderIds.system
+}
+
+// PaddleOCR Types
+export type OcrPpocrConfig = OcrProviderBaseConfig & {
+  apiUrl?: string
+  accessToken?: string
+}
+
+export type OcrPpocrProvider = {
+  id: 'paddleocr'
+  config: OcrPpocrConfig
+} & ImageOcrProvider &
+  // PdfOcrProvider &
+  BuiltinOcrProvider
+
+export const isOcrPpocrProvider = (p: OcrProvider): p is OcrPpocrProvider => {
+  return p.id === BuiltinOcrProviderIds.paddleocr
+}
+
+// OV OCR Types
+export type OcrOvConfig = OcrProviderBaseConfig & {
+  langs?: TranslateLanguageCode[]
+}
+
+export type OcrOvProvider = {
+  id: 'ovocr'
+  config: OcrOvConfig
+} & ImageOcrProvider &
+  // PdfOcrProvider &
+  BuiltinOcrProvider
+
+export const isOcrOVProvider = (p: OcrProvider): p is OcrOvProvider => {
+  return p.id === BuiltinOcrProviderIds.ovocr
 }

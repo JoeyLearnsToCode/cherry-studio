@@ -2,12 +2,12 @@ import { loggerService } from '@logger'
 import i18n from '@renderer/i18n'
 import store from '@renderer/store'
 import { setNutstoreSyncState } from '@renderer/store/nutstore'
-import { WebDavConfig } from '@renderer/types'
+import type { WebDavConfig } from '@renderer/types'
 import { NUTSTORE_HOST } from '@shared/config/nutstore'
 import dayjs from 'dayjs'
 import { type CreateDirectoryOptions } from 'webdav'
 
-import { getBackupData, handleData } from './BackupService'
+import { handleData } from './BackupService'
 
 const logger = loggerService.withContext('NutstoreService')
 
@@ -15,7 +15,7 @@ function getNutstoreToken() {
   const nutstoreToken = store.getState().nutstore.nutstoreToken
 
   if (!nutstoreToken) {
-    window.message.error({ content: i18n.t('message.error.invalid.nutstore_token'), key: 'nutstore' })
+    window.toast.error(i18n.t('message.error.invalid.nutstore_token'))
     return null
   }
   return nutstoreToken
@@ -143,7 +143,6 @@ export async function backupToNutstore({
 
   store.dispatch(setNutstoreSyncState({ syncing: true, lastSyncError: null }))
 
-  const backupData = await getBackupData()
   const skipBackupFile = store.getState().nutstore.nutstoreSkipBackupFile
   const maxBackups = store.getState().nutstore.nutstoreMaxBackups
 
@@ -151,7 +150,7 @@ export async function backupToNutstore({
     // 先清理旧备份
     await cleanupOldBackups(config, maxBackups)
 
-    const isSuccess = await window.api.backup.backupToWebdav(backupData, {
+    const isSuccess = await window.api.backup.backupToWebdav({
       ...config,
       fileName: finalFileName,
       skipBackupFile: skipBackupFile
@@ -159,15 +158,15 @@ export async function backupToNutstore({
 
     if (isSuccess) {
       store.dispatch(setNutstoreSyncState({ lastSyncError: null }))
-      showMessage && window.message.success({ content: i18n.t('message.backup.success'), key: 'backup' })
+      showMessage && window.toast.success(i18n.t('message.backup.success'))
     } else {
       store.dispatch(setNutstoreSyncState({ lastSyncError: 'Backup failed' }))
-      window.message.error({ content: i18n.t('message.backup.failed'), key: 'backup' })
+      window.toast.error(i18n.t('message.backup.failed'))
     }
   } catch (error) {
     store.dispatch(setNutstoreSyncState({ lastSyncError: 'Backup failed' }))
     logger.error('[Nutstore] Backup failed:', error as Error)
-    window.message.error({ content: i18n.t('message.backup.failed'), key: 'backup' })
+    window.toast.error(i18n.t('message.backup.failed'))
   } finally {
     store.dispatch(setNutstoreSyncState({ lastSyncTime: Date.now(), syncing: false }))
     isManualBackupRunning = false
@@ -201,7 +200,7 @@ export async function restoreFromNutstore(fileName?: string) {
     await handleData(JSON.parse(data))
   } catch (error) {
     logger.error('[backup] Error downloading file from WebDAV:', error as Error)
-    window.message.error({ content: i18n.t('error.backup.file_format'), key: 'restore' })
+    window.toast.error(i18n.t('error.backup.file_format'))
   }
 }
 

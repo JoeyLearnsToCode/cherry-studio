@@ -2,18 +2,18 @@ import 'emoji-picker-element'
 
 import { CloseCircleFilled } from '@ant-design/icons'
 import CodeEditor from '@renderer/components/CodeEditor'
-import CodeViewer from '@renderer/components/CodeViewer'
 import EmojiPicker from '@renderer/components/EmojiPicker'
 import { Box, HSpaceBetweenStack, HStack } from '@renderer/components/Layout'
-import { RichEditorRef } from '@renderer/components/RichEditor/types'
+import type { RichEditorRef } from '@renderer/components/RichEditor/types'
 import { usePromptProcessor } from '@renderer/hooks/usePromptProcessor'
 import { estimateTextTokens } from '@renderer/services/TokenService'
-import { Assistant, AssistantSettings } from '@renderer/types'
+import type { Assistant, AssistantSettings } from '@renderer/types'
 import { getLeadingEmoji } from '@renderer/utils'
 import { Button, Input, Popover } from 'antd'
 import { Edit, HelpCircle, Save } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import ReactMarkdown from 'react-markdown'
 import styled from 'styled-components'
 
 import { SettingDivider } from '..'
@@ -35,11 +35,7 @@ const AssistantPromptSettings: React.FC<Props> = ({ assistant, updateAssistant }
   const editorRef = useRef<RichEditorRef>(null)
 
   useEffect(() => {
-    const updateTokenCount = async () => {
-      const count = await estimateTextTokens(prompt)
-      setTokenCount(count)
-    }
-    updateTokenCount()
+    setTokenCount(estimateTextTokens(prompt))
   }, [prompt])
 
   const processedPrompt = usePromptProcessor({
@@ -50,7 +46,7 @@ const AssistantPromptSettings: React.FC<Props> = ({ assistant, updateAssistant }
   const onUpdate = () => {
     const _assistant = { ...assistant, name: name.trim(), emoji, prompt }
     updateAssistant(_assistant)
-    window.message.success(t('common.saved'))
+    window.toast.success(t('common.saved'))
   }
 
   const handleEmojiSelect = (selectedEmoji: string) => {
@@ -65,7 +61,7 @@ const AssistantPromptSettings: React.FC<Props> = ({ assistant, updateAssistant }
     updateAssistant(_assistant)
   }
 
-  const promptVarsContent = <pre>{t('agents.add.prompt.variables.tip.content')}</pre>
+  const promptVarsContent = <pre>{t('assistants.presets.add.prompt.variables.tip.content')}</pre>
 
   return (
     <Container>
@@ -115,14 +111,21 @@ const AssistantPromptSettings: React.FC<Props> = ({ assistant, updateAssistant }
       <SettingDivider />
       <HStack mb={8} alignItems="center" gap={4}>
         <Box style={{ fontWeight: 'bold' }}>{t('common.prompt')}</Box>
-        <Popover title={t('agents.add.prompt.variables.tip.title')} content={promptVarsContent}>
+        <Popover title={t('assistants.presets.add.prompt.variables.tip.title')} content={promptVarsContent}>
           <HelpCircle size={14} color="var(--color-text-2)" />
         </Popover>
       </HStack>
       <TextAreaContainer>
         <RichEditorContainer>
           {showPreview ? (
-            <CodeViewer children={processedPrompt} language="markdown" expanded={true} height="100%" />
+            <MarkdownContainer
+              onDoubleClick={() => {
+                const currentScrollTop = editorRef.current?.getScrollTop?.() || 0
+                setShowPreview(false)
+                requestAnimationFrame(() => editorRef.current?.setScrollTop?.(currentScrollTop))
+              }}>
+              <ReactMarkdown>{processedPrompt || prompt}</ReactMarkdown>
+            </MarkdownContainer>
           ) : (
             <CodeEditor
               value={prompt}
@@ -212,6 +215,12 @@ const RichEditorContainer = styled.div`
       overflow: auto;
     }
   }
+`
+
+const MarkdownContainer = styled.div.attrs({ className: 'markdown' })`
+  height: 100%;
+  padding: 0.5em;
+  overflow: auto;
 `
 
 export default AssistantPromptSettings

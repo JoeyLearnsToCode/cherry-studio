@@ -13,15 +13,16 @@ import { useDrag } from '@renderer/hooks/useDrag'
 import { useFiles } from '@renderer/hooks/useFiles'
 import { useOcr } from '@renderer/hooks/useOcr'
 import { useTemporaryValue } from '@renderer/hooks/useTemporaryValue'
+import { useTimer } from '@renderer/hooks/useTimer'
 import useTranslate from '@renderer/hooks/useTranslate'
 import { estimateTextTokens } from '@renderer/services/TokenService'
 import { saveTranslateHistory, translateText } from '@renderer/services/TranslateService'
 import { useAppDispatch, useAppSelector } from '@renderer/store'
 import { setTranslateAbortKey, setTranslating as setTranslatingAction } from '@renderer/store/runtime'
 import { setTranslatedContent as setTranslatedContentAction, setTranslateInput } from '@renderer/store/translate'
+import type { FileMetadata, SupportedOcrFile } from '@renderer/types'
 import {
   type AutoDetectionMethod,
-  FileMetadata,
   isSupportedOcrFile,
   type Model,
   type TranslateHistory,
@@ -29,8 +30,7 @@ import {
 } from '@renderer/types'
 import { getFileExtension, isTextFile, runAsyncFunction, uuid } from '@renderer/utils'
 import { abortCompletion } from '@renderer/utils/abortController'
-import { isAbortError } from '@renderer/utils/error'
-import { formatErrorMessage } from '@renderer/utils/error'
+import { formatErrorMessageWithPrefix, isAbortError } from '@renderer/utils/error'
 import { getFilesFromDropEvent, getTextFromDropEvent } from '@renderer/utils/input'
 import {
   createInputScrollHandler,
@@ -38,12 +38,15 @@ import {
   detectLanguage,
   determineTargetLanguage
 } from '@renderer/utils/translate'
+import { documentExts } from '@shared/config/constant'
 import { imageExts, MB, textExts } from '@shared/config/constant'
 import { Button, Flex, FloatButton, Popover, Tooltip, Typography } from 'antd'
-import TextArea, { TextAreaRef } from 'antd/es/input/TextArea'
+import type { TextAreaRef } from 'antd/es/input/TextArea'
+import TextArea from 'antd/es/input/TextArea'
 import { isEmpty, throttle } from 'lodash'
 import { Check, CirclePause, FolderClock, Settings2, UploadIcon } from 'lucide-react'
-import { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { FC } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
@@ -60,10 +63,12 @@ const TranslatePage: FC = () => {
   // hooks
   const { t } = useTranslation()
   const { translateModel, setTranslateModel } = useDefaultModel()
-  const { prompt, getLanguageByLangcode } = useTranslate()
+  const { prompt, getLanguageByLangcode, settings } = useTranslate()
+  const { autoCopy } = settings
   const { shikiMarkdownIt } = useCodeStyle()
-  const { onSelectFile, selecting, clearFiles } = useFiles({ extensions: [...imageExts, ...textExts] })
+  const { onSelectFile, selecting, clearFiles } = useFiles({ extensions: [...imageExts, ...textExts, ...documentExts] })
   const { ocr } = useOcr()
+  const { setTimeoutTimer } = useTimer()
 
   // states
   // const [text, setText] = useState(_text)
@@ -104,7 +109,7 @@ const TranslatePage: FC = () => {
   // 控制翻译模型切换
   const handleModelChange = (model: Model) => {
     setTranslateModel(model)
-    db.settings.put({ id: 'translate:model', value: model.id })
+    void db.settings.put({ id: 'translate:model', value: model.id })
   }
 
   // 控制翻译状态
@@ -128,6 +133,24 @@ const TranslatePage: FC = () => {
     },
     [dispatch]
   )
+
+  // 控制复制行为
+  const copy = useCallback(
+    async (text: string) => {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+    },
+    [setCopied]
+  )
+
+  const onCopy = useCallback(async () => {
+    try {
+      await copy(translatedContent)
+    } catch (error) {
+      logger.error('Failed to copy text to clipboard:', error as Error)
+      window.toast.error(t('common.copy_failed'))
+    }
+  }, [copy, t, translatedContent])
 
   /**
    * 翻译文本并保存历史记录，包含完整的异常处理，不会抛出异常
@@ -153,28 +176,39 @@ const TranslatePage: FC = () => {
         try {
           translated = await translateText(text, actualTargetLanguage, throttle(setTranslatedContent, 100), abortKey)
         } catch (e) {
-          if (!isAbortError(e)) {
+          if (isAbortError(e)) {
+            window.toast.info(t('translate.info.aborted'))
+          } else {
             logger.error('Failed to translate text', e as Error)
-            window.message.error(t('translate.error.failed' + ': ' + (e as Error).message))
+            window.toast.error(formatErrorMessageWithPrefix(e, t('translate.error.failed')))
           }
           setTranslating(false)
           return
         }
 
-        window.message.success(t('translate.complete'))
+        window.toast.success(t('translate.complete'))
+        if (autoCopy) {
+          setTimeoutTimer(
+            'auto-copy',
+            async () => {
+              await copy(translated)
+            },
+            100
+          )
+        }
 
         try {
           await saveTranslateHistory(text, translated, actualSourceLanguage.langCode, actualTargetLanguage.langCode)
         } catch (e) {
           logger.error('Failed to save translate history', e as Error)
-          window.message.error(t('translate.history.error.save') + ': ' + (e as Error).message)
+          window.toast.error(formatErrorMessageWithPrefix(e, t('translate.history.error.save')))
         }
       } catch (e) {
         logger.error('Failed to translate', e as Error)
-        window.message.error(t('translate.error.unknown') + ': ' + (e as Error).message)
+        window.toast.error(formatErrorMessageWithPrefix(e, t('translate.error.unknown')))
       }
     },
-    [dispatch, setTranslatedContent, setTranslating, t, translating]
+    [autoCopy, copy, dispatch, setTimeoutTimer, setTranslatedContent, setTranslating, t, translating]
   )
 
   // 控制翻译按钮是否可用
@@ -194,10 +228,7 @@ const TranslatePage: FC = () => {
     if (!couldTranslate) return
     if (!text.trim()) return
     if (!translateModel) {
-      window.message.error({
-        content: t('translate.error.not_configured'),
-        key: 'translate-message'
-      })
+      window.toast.error(t('translate.error.not_configured'))
       return
     }
 
@@ -222,10 +253,7 @@ const TranslatePage: FC = () => {
           errorMessage = t('translate.language.not_pair')
         }
 
-        window.message.warning({
-          content: errorMessage,
-          key: 'translate-message'
-        })
+        window.toast.warning(errorMessage)
         return
       }
 
@@ -237,10 +265,7 @@ const TranslatePage: FC = () => {
       await translate(text, actualSourceLanguage, actualTargetLanguage)
     } catch (error) {
       logger.error('Translation error:', error as Error)
-      window.message.error({
-        content: String(error),
-        key: 'translate-message'
-      })
+      window.toast.error(formatErrorMessageWithPrefix(error, t('translate.error.failed')))
       return
     } finally {
       setTranslating(false)
@@ -271,13 +296,7 @@ const TranslatePage: FC = () => {
   // 控制双向翻译切换
   const toggleBidirectional = (value: boolean) => {
     setIsBidirectional(value)
-    db.settings.put({ id: 'translate:bidirectional:enabled', value })
-  }
-
-  // 控制复制按钮
-  const onCopy = () => {
-    navigator.clipboard.writeText(translatedContent)
-    setCopied(false)
+    void db.settings.put({ id: 'translate:bidirectional:enabled', value })
   }
 
   // 控制历史记录点击
@@ -312,16 +331,18 @@ const TranslatePage: FC = () => {
     }
     const source = sourceLanguage === 'auto' ? detectedLanguage : sourceLanguage
     if (!source) {
-      window.message.error(t('translate.error.invalid_source'))
+      window.toast.error(t('translate.error.invalid_source'))
       return
     }
     if (source.langCode === UNKNOWN.langCode) {
-      window.message.error(t('translate.error.detect.unknown'))
+      window.toast.error(t('translate.error.detect.unknown'))
       return
     }
     const target = targetLanguage
     setSourceLanguage(target)
     setTargetLanguage(source)
+    void db.settings.put({ id: 'translate:source:language', value: target.langCode })
+    void db.settings.put({ id: 'translate:target:language', value: source.langCode })
   }, [couldExchangeAuto, detectedLanguage, sourceLanguage, t, targetLanguage])
 
   useEffect(() => {
@@ -333,7 +354,7 @@ const TranslatePage: FC = () => {
   useEffect(() => {
     if (enableMarkdown && translatedContent) {
       let isMounted = true
-      shikiMarkdownIt(translatedContent).then((rendered) => {
+      void shikiMarkdownIt(translatedContent).then((rendered) => {
         if (isMounted) {
           setRenderedMarkdown(rendered)
         }
@@ -349,7 +370,7 @@ const TranslatePage: FC = () => {
 
   // 控制设置加载
   useEffect(() => {
-    runAsyncFunction(async () => {
+    void runAsyncFunction(async () => {
       const targetLang = await db.settings.get({ id: 'translate:target:language' })
       targetLang && setTargetLanguage(getLanguageByLangcode(targetLang.value))
 
@@ -373,7 +394,7 @@ const TranslatePage: FC = () => {
         } else {
           const defaultPair: [TranslateLanguage, TranslateLanguage] = [LanguagesEnum.enUS, LanguagesEnum.zhCN]
           setBidirectionalPair(defaultPair)
-          db.settings.put({
+          void db.settings.put({
             id: 'translate:bidirectional:pair',
             value: [defaultPair[0].langCode, defaultPair[1].langCode]
           })
@@ -395,7 +416,7 @@ const TranslatePage: FC = () => {
         setAutoDetectionMethod(autoDetectionMethodSetting.value)
       } else {
         setAutoDetectionMethod('franc')
-        db.settings.put({ id: 'translate:detect:method', value: 'franc' })
+        void db.settings.put({ id: 'translate:detect:method', value: 'franc' })
       }
     })
   }, [getLanguageByLangcode])
@@ -407,7 +428,7 @@ const TranslatePage: FC = () => {
       setAutoDetectionMethod(method)
     } catch (e) {
       logger.error('Failed to update auto detection method setting.', e as Error)
-      window.message.error(t('translate.error.detect.update_setting') + formatErrorMessage(e))
+      window.toast.error(formatErrorMessageWithPrefix(e, t('translate.error.detect.update_setting')))
     }
   }
 
@@ -416,7 +437,7 @@ const TranslatePage: FC = () => {
     const isEnterPressed = e.key === 'Enter'
     if (isEnterPressed && !e.nativeEvent.isComposing && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       e.preventDefault()
-      onTranslate()
+      void onTranslate()
     }
   }
 
@@ -447,7 +468,7 @@ const TranslatePage: FC = () => {
         value={targetLanguage.langCode}
         onChange={(value) => {
           setTargetLanguage(getLanguageByLangcode(value))
-          db.settings.put({ id: 'translate:target:language', value })
+          void db.settings.put({ id: 'translate:target:language', value })
         }}
       />
     )
@@ -462,6 +483,75 @@ const TranslatePage: FC = () => {
   // 控制token估计
   const tokenCount = useMemo(() => estimateTextTokens(text + prompt), [prompt, text])
 
+  const readFile = useCallback(
+    async (file: FileMetadata) => {
+      const _readFile = async () => {
+        try {
+          const fileExtension = getFileExtension(file.path)
+
+          // Check if file is supported format (text file or document file)
+          let isText: boolean
+          const isDocument: boolean = documentExts.includes(fileExtension)
+
+          if (!isDocument) {
+            try {
+              // For non-document files, check if it's a text file
+              isText = await isTextFile(file.path)
+            } catch (e) {
+              logger.error('Failed to check file type.', e as Error)
+              window.toast.error(formatErrorMessageWithPrefix(e, t('translate.files.error.check_type')))
+              return
+            }
+          } else {
+            isText = false
+          }
+
+          if (!isText && !isDocument) {
+            window.toast.error(t('common.file.not_supported', { type: fileExtension }))
+            logger.error('Unsupported file type.')
+            return
+          }
+
+          // File size check - document files allowed to be larger
+          const maxSize = isDocument ? 20 * MB : 5 * MB
+          if (file.size > maxSize) {
+            window.toast.error(t('translate.files.error.too_large') + ` (0 ~ ${maxSize / MB} MB)`)
+            return
+          }
+
+          let result: string
+          try {
+            if (isDocument) {
+              // Use the new document reading API
+              result = await window.api.file.readExternal(file.path, true)
+            } else {
+              // Read text file
+              result = await window.api.fs.readText(file.path)
+            }
+            setText(text + result)
+          } catch (e) {
+            logger.error('Failed to read file.', e as Error)
+            window.toast.error(formatErrorMessageWithPrefix(e, t('translate.files.error.unknown')))
+          }
+        } catch (e) {
+          logger.error('Failed to read file.', e as Error)
+          window.toast.error(formatErrorMessageWithPrefix(e, t('translate.files.error.unknown')))
+        }
+      }
+      const promise = _readFile()
+      window.toast.loading({ title: t('translate.files.reading'), promise })
+    },
+    [setText, t, text]
+  )
+
+  const ocrFile = useCallback(
+    async (file: SupportedOcrFile) => {
+      const ocrResult = await ocr(file)
+      setText(text + ocrResult.text)
+    },
+    [ocr, setText, text]
+  )
+
   // 统一的文件处理
   const processFile = useCallback(
     async (file: FileMetadata) => {
@@ -469,53 +559,12 @@ const TranslatePage: FC = () => {
       const shouldOCR = isSupportedOcrFile(file)
 
       if (shouldOCR) {
-        try {
-          const ocrResult = await ocr(file)
-          setText(ocrResult.text)
-        } finally {
-          // do nothing when failed. because error should be handled inside
-        }
+        await ocrFile(file)
       } else {
-        try {
-          window.message.loading({ content: t('translate.files.reading'), key: 'translate_files_reading', duration: 0 })
-          let isText: boolean
-          try {
-            // 检查文件是否为文本文件
-            isText = await isTextFile(file.path)
-          } catch (e) {
-            logger.error('Failed to check if file is text.', e as Error)
-            window.message.error(t('translate.files.error.check_type') + ': ' + formatErrorMessage(e))
-            throw e
-          }
-
-          if (!isText) {
-            window.message.error({
-              key: 'file_not_supported',
-              content: t('common.file.not_supported', { type: getFileExtension(file.path) })
-            })
-            logger.error('Unsupported file type.')
-            throw new Error('Unsupported file type')
-          }
-
-          // the threshold may be too large
-          if (file.size > 5 * MB) {
-            window.message.error(t('translate.files.error.too_large') + ' (0 ~ 5 MB)')
-          } else {
-            try {
-              const result = await window.api.fs.readText(file.path)
-              setText(result)
-            } catch (e) {
-              logger.error('Failed to read text file.', e as Error)
-              window.message.error(t('translate.files.error.unknown') + ': ' + formatErrorMessage(e))
-            }
-          }
-        } finally {
-          // do nothing when failed because error should be handled inside
-          window.message.destroy('translate_files_reading')
-        }
+        await readFile(file)
       }
     },
-    [ocr, setText, t]
+    [ocrFile, readFile]
   )
 
   // 点击上传文件按钮
@@ -527,11 +576,10 @@ const TranslatePage: FC = () => {
       if (!file) {
         return
       }
-
-      return await processFile(file)
+      await processFile(file)
     } catch (e) {
       logger.error('Unknown error when selecting file.', e as Error)
-      window.message.error(t('translate.files.error.unknown') + ': ' + formatErrorMessage(e))
+      window.toast.error(formatErrorMessageWithPrefix(e, t('translate.files.error.unknown')))
     } finally {
       clearFiles()
       setIsProcessing(false)
@@ -543,10 +591,7 @@ const TranslatePage: FC = () => {
       if (files.length === 0) return null
       if (files.length > 1) {
         // 多文件上传时显示提示信息
-        window.message.error({
-          key: 'multiple_files',
-          content: t('translate.files.error.multiple')
-        })
+        window.toast.error(t('translate.files.error.multiple'))
         return null
       }
       return files[0]
@@ -568,34 +613,31 @@ const TranslatePage: FC = () => {
     async (e: React.DragEvent<HTMLDivElement>) => {
       setIsProcessing(true)
       setIsDragging(false)
-      // const supportedFiles = await filterSupportedFiles(_files, extensions)
-      const data = await getTextFromDropEvent(e).catch((err) => {
-        logger.error('getTextFromDropEvent', err)
-        window.message.error({
-          key: 'file_error',
-          content: t('translate.files.error.unknown')
+      const process = async () => {
+        // const supportedFiles = await filterSupportedFiles(_files, extensions)
+        const data = await getTextFromDropEvent(e).catch((err) => {
+          logger.error('getTextFromDropEvent', err)
+          window.toast.error(t('translate.files.error.unknown'))
+          return null
         })
-        return null
-      })
-      if (data === null) {
-        return
-      }
-      setText(text + data)
+        if (data === null) {
+          return
+        }
+        setText(text + data)
 
-      const droppedFiles = await getFilesFromDropEvent(e).catch((err) => {
-        logger.error('handleDrop:', err)
-        window.message.error({
-          key: 'file_error',
-          content: t('translate.files.error.unknown')
+        const droppedFiles = await getFilesFromDropEvent(e).catch((err) => {
+          logger.error('handleDrop:', err)
+          window.toast.error(t('translate.files.error.unknown'))
+          return null
         })
-        return null
-      })
 
-      if (droppedFiles) {
-        const file = getSingleFile(droppedFiles) as FileMetadata
-        if (!file) return
-        processFile(file)
+        if (droppedFiles) {
+          const file = getSingleFile(droppedFiles) as FileMetadata
+          if (!file) return
+          void processFile(file)
+        }
       }
+      await process()
       setIsProcessing(false)
     },
     [getSingleFile, processFile, setIsDragging, setText, t, text]
@@ -612,9 +654,13 @@ const TranslatePage: FC = () => {
   // 粘贴上传文件
   const onPaste = useCallback(
     async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      if (isProcessing) return
       setIsProcessing(true)
-      logger.debug('event', event)
-      if (event.clipboardData?.files && event.clipboardData.files.length > 0) {
+      // logger.debug('event', event)
+      const clipboardText = event.clipboardData.getData('text')
+      if (!isEmpty(clipboardText)) {
+        // depend default. this branch is only for preventing files when clipboard contains text
+      } else if (event.clipboardData.files && event.clipboardData.files.length > 0) {
         event.preventDefault()
         const files = event.clipboardData.files
         const file = getSingleFile(files) as File
@@ -633,10 +679,7 @@ const TranslatePage: FC = () => {
               await window.api.file.write(tempFilePath, uint8Array)
               selectedFile = await window.api.file.get(tempFilePath)
             } else {
-              window.message.info({
-                key: 'file_not_supported',
-                content: t('common.file.not_supported', { type: getFileExtension(filePath) })
-              })
+              window.toast.info(t('common.file.not_supported', { type: getFileExtension(filePath) }))
               return
             }
           } else {
@@ -645,21 +688,18 @@ const TranslatePage: FC = () => {
           }
 
           if (!selectedFile) {
-            window.message.error({
-              key: 'file_error',
-              content: t('translate.files.error.unknown')
-            })
+            window.toast.error(t('translate.files.error.unknown'))
             return
           }
           await processFile(selectedFile)
         } catch (error) {
           logger.error('onPaste:', error as Error)
-          window.message.error(t('chat.input.file_error'))
+          window.toast.error(t('chat.input.file_error'))
         }
       }
       setIsProcessing(false)
     },
-    [getSingleFile, processFile, t]
+    [getSingleFile, isProcessing, processFile, t]
   )
   return (
     <Container
@@ -695,7 +735,7 @@ const TranslatePage: FC = () => {
               onChange={(value) => {
                 if (value !== 'auto') setSourceLanguage(getLanguageByLangcode(value))
                 else setSourceLanguage('auto')
-                db.settings.put({ id: 'translate:source:language', value })
+                void db.settings.put({ id: 'translate:source:language', value })
               }}
               extraOptionsBefore={[
                 {
@@ -839,7 +879,8 @@ const ContentContainer = styled.div<{ $historyDrawerVisible: boolean }>`
 `
 
 const AreaContainer = styled.div`
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   flex: 1;
   gap: 8px;
 `
@@ -910,6 +951,11 @@ const OutputContainer = styled.div`
   border-radius: 10px;
   padding: 10px 5px;
   height: calc(100vh - var(--navbar-height) - 70px);
+  overflow: hidden;
+
+  & > div > .markdown > pre {
+    background-color: var(--color-background-mute) !important;
+  }
 
   &:hover .copy-button {
     opacity: 1;

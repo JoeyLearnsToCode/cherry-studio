@@ -2,14 +2,15 @@ import CodeEditor from '@renderer/components/CodeEditor'
 import { ResetIcon } from '@renderer/components/Icons'
 import { HStack } from '@renderer/components/Layout'
 import TextBadge from '@renderer/components/TextBadge'
-import { isMac, THEME_COLOR_PRESETS } from '@renderer/config/constant'
+import { isLinux, isMac, THEME_COLOR_PRESETS } from '@renderer/config/constant'
 import { DEFAULT_SIDEBAR_ICONS } from '@renderer/config/sidebar'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import { useNavbarPosition, useSettings } from '@renderer/hooks/useSettings'
+import { useTimer } from '@renderer/hooks/useTimer'
 import useUserTheme from '@renderer/hooks/useUserTheme'
 import { useAppDispatch } from '@renderer/store'
+import type { AssistantIconType } from '@renderer/store/settings'
 import {
-  AssistantIconType,
   setAssistantIconType,
   setClickAssistantToShowTopic,
   setCustomCss,
@@ -18,9 +19,10 @@ import {
   setSidebarIcons
 } from '@renderer/store/settings'
 import { ThemeMode } from '@renderer/types'
-import { Button, ColorPicker, Segmented, Switch } from 'antd'
+import { Button, ColorPicker, Segmented, Select, Switch, Tooltip } from 'antd'
 import { Minus, Monitor, Moon, Plus, Sun } from 'lucide-react'
-import { FC, useCallback, useEffect, useMemo, useState } from 'react'
+import type { FC } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
@@ -67,17 +69,21 @@ const DisplaySettings: FC = () => {
     sidebarIcons,
     setTheme,
     assistantIconType,
-    userTheme
+    userTheme,
+    useSystemTitleBar,
+    setUseSystemTitleBar
   } = useSettings()
   const { navbarPosition, setNavbarPosition } = useNavbarPosition()
   const { theme, settedTheme } = useTheme()
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
+  const { setTimeoutTimer } = useTimer()
   const [currentZoom, setCurrentZoom] = useState(1.0)
   const { setUserTheme } = useUserTheme()
 
   const [visibleIcons, setVisibleIcons] = useState(sidebarIcons?.visible || DEFAULT_SIDEBAR_ICONS)
   const [disabledIcons, setDisabledIcons] = useState(sidebarIcons?.disabled || [])
+  const [fontList, setFontList] = useState<string[]>([])
 
   const handleWindowStyleChange = useCallback(
     (checked: boolean) => {
@@ -85,6 +91,26 @@ const DisplaySettings: FC = () => {
     },
     [setWindowStyle]
   )
+
+  const handleUseSystemTitleBarChange = (checked: boolean) => {
+    window.modal.confirm({
+      title: t('settings.use_system_title_bar.confirm.title'),
+      content: t('settings.use_system_title_bar.confirm.content'),
+      okText: t('common.confirm'),
+      cancelText: t('common.cancel'),
+      centered: true,
+      onOk() {
+        setUseSystemTitleBar(checked)
+        setTimeoutTimer(
+          'handleUseSystemTitleBarChange',
+          () => {
+            void window.api.relaunchApp()
+          },
+          500
+        )
+      }
+    })
+  }
 
   const handleColorPrimaryChange = useCallback(
     (colorHex: string) => {
@@ -136,13 +162,18 @@ const DisplaySettings: FC = () => {
   )
 
   useEffect(() => {
+    // 初始化获取所有系统字体
+    void window.api.getSystemFonts().then((fonts: string[]) => {
+      setFontList(fonts)
+    })
+
     // 初始化获取当前缩放值
-    window.api.handleZoomFactor(0).then((factor) => {
+    void window.api.handleZoomFactor(0).then((factor) => {
       setCurrentZoom(factor)
     })
 
     const handleResize = () => {
-      window.api.handleZoomFactor(0).then((factor) => {
+      void window.api.handleZoomFactor(0).then((factor) => {
         setCurrentZoom(factor)
       })
     }
@@ -160,6 +191,26 @@ const DisplaySettings: FC = () => {
     setCurrentZoom(zoomFactor)
   }
 
+  const handleUserFontChange = useCallback(
+    (value: string) => {
+      setUserTheme({
+        ...userTheme,
+        userFontFamily: value
+      })
+    },
+    [setUserTheme, userTheme]
+  )
+
+  const handleUserCodeFontChange = useCallback(
+    (value: string) => {
+      setUserTheme({
+        ...userTheme,
+        userCodeFontFamily: value
+      })
+    },
+    [setUserTheme, userTheme]
+  )
+
   const assistantIconTypeOptions = useMemo(
     () => [
       { value: 'model', label: t('settings.assistant.icon.type.model') },
@@ -167,6 +218,21 @@ const DisplaySettings: FC = () => {
       { value: 'none', label: t('settings.assistant.icon.type.none') }
     ],
     [t]
+  )
+
+  const renderFontOption = useCallback(
+    (font: string) => (
+      <Tooltip title={font} placement="left" mouseEnterDelay={0.5}>
+        <div
+          className="truncate"
+          style={{
+            fontFamily: font
+          }}>
+          {font}
+        </div>
+      </Tooltip>
+    ),
+    []
   )
 
   return (
@@ -194,6 +260,7 @@ const DisplaySettings: FC = () => {
               ))}
             </HStack>
             <ColorPicker
+              style={{ fontFamily: 'inherit' }}
               className="color-picker"
               value={userTheme.colorPrimary}
               onChange={(color) => handleColorPrimaryChange(color.toHexString())}
@@ -214,6 +281,15 @@ const DisplaySettings: FC = () => {
             <SettingRow>
               <SettingRowTitle>{t('settings.theme.window.style.transparent')}</SettingRowTitle>
               <Switch checked={windowStyle === 'transparent'} onChange={handleWindowStyleChange} />
+            </SettingRow>
+          </>
+        )}
+        {isLinux && (
+          <>
+            <SettingDivider />
+            <SettingRow>
+              <SettingRowTitle>{t('settings.use_system_title_bar.title')}</SettingRowTitle>
+              <Switch checked={useSystemTitleBar} onChange={handleUseSystemTitleBarChange} />
             </SettingRow>
           </>
         )}
@@ -253,6 +329,75 @@ const DisplaySettings: FC = () => {
               variant="text"
             />
           </ZoomButtonGroup>
+        </SettingRow>
+      </SettingGroup>
+      <SettingGroup theme={theme}>
+        <SettingTitle style={{ justifyContent: 'flex-start', gap: 5 }}>
+          {t('settings.display.font.title')} <TextBadge text="New" />
+        </SettingTitle>
+        <SettingDivider />
+        <SettingRow>
+          <SettingRowTitle>{t('settings.display.font.global')}</SettingRowTitle>
+          <SelectRow>
+            <Select
+              style={{ width: 280 }}
+              placeholder={t('settings.display.font.select')}
+              options={[
+                {
+                  label: (
+                    <span style={{ fontFamily: 'Ubuntu, -apple-system, system-ui, Arial, sans-serif' }}>
+                      {t('settings.display.font.default')}
+                    </span>
+                  ),
+                  value: ''
+                },
+                ...fontList.map((font) => ({ label: renderFontOption(font), value: font }))
+              ]}
+              value={userTheme.userFontFamily || ''}
+              onChange={(font) => handleUserFontChange(font)}
+              showSearch
+              getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body}
+            />
+            <Button
+              onClick={() => handleUserFontChange('')}
+              style={{ marginLeft: 8 }}
+              icon={<ResetIcon size="14" />}
+              color="default"
+              variant="text"
+            />
+          </SelectRow>
+        </SettingRow>
+        <SettingDivider />
+        <SettingRow>
+          <SettingRowTitle>{t('settings.display.font.code')}</SettingRowTitle>
+          <SelectRow>
+            <Select
+              style={{ width: 280 }}
+              placeholder={t('settings.display.font.select')}
+              options={[
+                {
+                  label: (
+                    <span style={{ fontFamily: 'Ubuntu, -apple-system, system-ui, Arial, sans-serif' }}>
+                      {t('settings.display.font.default')}
+                    </span>
+                  ),
+                  value: ''
+                },
+                ...fontList.map((font) => ({ label: renderFontOption(font), value: font }))
+              ]}
+              value={userTheme.userCodeFontFamily || ''}
+              onChange={(font) => handleUserCodeFontChange(font)}
+              showSearch
+              getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body}
+            />
+            <Button
+              onClick={() => handleUserCodeFontChange('')}
+              style={{ marginLeft: 8 }}
+              icon={<ResetIcon size="14" />}
+              color="default"
+              variant="text"
+            />
+          </SelectRow>
         </SettingRow>
       </SettingGroup>
       <SettingGroup theme={theme}>
@@ -377,6 +522,13 @@ const ZoomValue = styled.span`
   width: 40px;
   text-align: center;
   margin: 0 5px;
+`
+
+const SelectRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 380px;
 `
 
 export default DisplaySettings

@@ -1,4 +1,5 @@
 import { loggerService } from '@logger'
+import HorizontalScrollContainer from '@renderer/components/HorizontalScrollContainer'
 import Scrollbar from '@renderer/components/Scrollbar'
 import { useMessageEditing } from '@renderer/context/MessageEditingContext'
 import { useAssistant } from '@renderer/hooks/useAssistant'
@@ -11,11 +12,14 @@ import { EVENT_NAMES, EventEmitter, pendingEditMessageIds } from '@renderer/serv
 import { getMessageModelId } from '@renderer/services/MessagesService'
 import { getModelUniqId } from '@renderer/services/ModelService'
 import { estimateMessageUsage } from '@renderer/services/TokenService'
-import { Assistant, Topic } from '@renderer/types'
+import type { Assistant, Topic } from '@renderer/types'
 import { AssistantMessageStatus, type Message, type MessageBlock } from '@renderer/types/newMessage'
-import { classNames } from '@renderer/utils'
+import { classNames, cn } from '@renderer/utils'
+import { scrollIntoView } from '@renderer/utils/dom'
+import { isMessageProcessing } from '@renderer/utils/messageUtils/is'
 import { Divider, Dropdown } from 'antd'
-import React, { Dispatch, FC, memo, SetStateAction, useCallback, useEffect, useRef } from 'react'
+import type { Dispatch, FC, SetStateAction } from 'react'
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
@@ -25,6 +29,7 @@ import MessageErrorBoundary from './MessageErrorBoundary'
 import MessageHeader from './MessageHeader'
 import MessageMenubar from './MessageMenubar'
 import MessageOutline from './MessageOutline'
+import MessageVersionSwitcher from './MessageVersionSwitcher'
 import { useMessageMenuItems } from './useMessageMenuItems'
 
 interface Props {
@@ -40,6 +45,7 @@ interface Props {
   onSetMessages?: Dispatch<SetStateAction<Message[]>>
   onUpdateUseful?: (msgId: string) => void
   isGroupContextMessage?: boolean
+  isHorizontalMultiModelLayout?: boolean
 }
 
 const logger = loggerService.withContext('MessageItem')
@@ -61,15 +67,10 @@ const MessageItem: FC<Props> = ({
   index,
   hideMenuBar = false,
   isGrouped,
-  isStreaming = false,
   onUpdateUseful,
-  isGroupContextMessage
+  isGroupContextMessage,
+  isHorizontalMultiModelLayout = false
 }) => {
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false)
-  const deleteClickRef = React.useRef(false)
-  const deleteConfirmTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
-  const onDeleteRef = React.useRef<() => void>(() => {})
-
   const { t } = useTranslation()
   const { assistant, setModel } = useAssistant(message.assistantId)
   const { isMultiSelectMode } = useChatContext(topic)
@@ -80,9 +81,13 @@ const MessageItem: FC<Props> = ({
   const { editingMessageId, startEditing, stopEditing } = useMessageEditing()
   const { setTimeoutTimer } = useTimer()
   const isEditing = editingMessageId === message.id
-  const [contextMenuOpen, setContextMenuOpen] = React.useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const deleteClickRef = useRef(false)
+  const deleteConfirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const onDeleteRef = useRef<() => void>(() => {})
+  const [contextMenuOpen, setContextMenuOpen] = useState(false)
 
-  const resetDeleteConfirm = React.useCallback(() => {
+  const resetDeleteConfirm = useCallback(() => {
     if (deleteConfirmTimerRef.current) {
       clearTimeout(deleteConfirmTimerRef.current)
       deleteConfirmTimerRef.current = null
@@ -90,7 +95,7 @@ const MessageItem: FC<Props> = ({
     setDeleteConfirmOpen(false)
   }, [])
 
-  const startDeleteConfirmTimer = React.useCallback(() => {
+  const startDeleteConfirmTimer = useCallback(() => {
     if (deleteConfirmTimerRef.current) {
       clearTimeout(deleteConfirmTimerRef.current)
     }
@@ -100,13 +105,11 @@ const MessageItem: FC<Props> = ({
     }, 3000)
   }, [])
 
-  const handleDeleteConfirmClick = React.useCallback(() => {
+  const handleDeleteConfirmClick = useCallback(() => {
     if (deleteConfirmOpen) {
-      // 第二次点击：执行删除并重置
       onDeleteRef.current()
       resetDeleteConfirm()
     } else {
-      // 第一次点击：进入确认模式
       setDeleteConfirmOpen(true)
       startDeleteConfirmTimer()
     }
@@ -138,9 +141,10 @@ const MessageItem: FC<Props> = ({
 
   useEffect(() => {
     if (isEditing && messageContainerRef.current) {
-      messageContainerRef.current.scrollIntoView({
+      scrollIntoView(messageContainerRef.current, {
         behavior: 'smooth',
-        block: 'center'
+        block: 'center',
+        container: 'nearest'
       })
     }
   }, [isEditing])
@@ -154,7 +158,7 @@ const MessageItem: FC<Props> = ({
         if (message.status === 'error' || message.status === 'paused') {
           updates.status = AssistantMessageStatus.SUCCESS
         }
-        editMessage(message.id, updates)
+        void editMessage(message.id, updates)
         stopEditing()
       } catch (error) {
         logger.error('Failed to save message blocks:', error as Error)
@@ -165,9 +169,8 @@ const MessageItem: FC<Props> = ({
 
   const handleEditResend = useCallback(
     async (blocks: MessageBlock[]) => {
-      if (!assistant) return
       try {
-        await resendUserMessageWithEdit(message, blocks, assistant as Assistant)
+        await resendUserMessageWithEdit(message, blocks, assistant)
         stopEditing()
       } catch (error) {
         logger.error('Failed to resend message:', error as Error)
@@ -182,12 +185,13 @@ const MessageItem: FC<Props> = ({
 
   const isLastMessage = index === 0 || !!isGrouped
   const isAssistantMessage = message.role === 'assistant'
-  const showMenubar = !hideMenuBar && !isStreaming && !message.status.includes('ing') && !isEditing
+  const isProcessing = isMessageProcessing(message)
+  const showMenubar = !hideMenuBar && !isEditing && !isProcessing
 
   const messageHighlightHandler = useCallback(
     (highlight: boolean = true) => {
       if (messageContainerRef.current) {
-        messageContainerRef.current.scrollIntoView({ behavior: 'smooth' })
+        scrollIntoView(messageContainerRef.current, { behavior: 'smooth', block: 'center', container: 'nearest' })
         if (highlight) {
           setTimeoutTimer(
             'messageHighlightHandler',
@@ -216,11 +220,22 @@ const MessageItem: FC<Props> = ({
       pendingEditMessageIds.delete(message.id)
       startEditing(message.id)
     }
-    const unsubscribes = [
-      EventEmitter.on(EVENT_NAMES.LOCATE_MESSAGE + ':' + message.id, messageHighlightHandler)
-    ]
+    const unsubscribes = [EventEmitter.on(EVENT_NAMES.LOCATE_MESSAGE + ':' + message.id, messageHighlightHandler)]
     return () => unsubscribes.forEach((unsub) => unsub())
   }, [message.id, messageHighlightHandler, startEditing])
+
+  // Listen for external edit requests and activate editor for this message if it matches
+  useEffect(() => {
+    const handleEditRequest = (targetId: string) => {
+      if (targetId === message.id) {
+        startEditing(message.id)
+      }
+    }
+    const unsubscribe = EventEmitter.on(EVENT_NAMES.EDIT_MESSAGE, handleEditRequest)
+    return () => {
+      unsubscribe()
+    }
+  }, [message.id, startEditing])
 
   if (message.type === 'clear') {
     return (
@@ -231,7 +246,7 @@ const MessageItem: FC<Props> = ({
           if (isMultiSelectMode) {
             return
           }
-          EventEmitter.emit(EVENT_NAMES.NEW_CONTEXT)
+          void EventEmitter.emit(EVENT_NAMES.NEW_CONTEXT)
         }}>
         <Divider dashed style={{ padding: '0 20px' }} plain>
           {t('chat.message.new.context')}
@@ -251,7 +266,7 @@ const MessageItem: FC<Props> = ({
       ref={messageContainerRef}>
       <MessageHeader
         message={message}
-        assistant={assistant as Assistant}
+        assistant={assistant}
         model={model}
         key={getModelUniqId(model)}
         topic={topic}
@@ -276,33 +291,38 @@ const MessageItem: FC<Props> = ({
             style={{
               fontFamily: messageFont === 'serif' ? 'var(--font-family-serif)' : 'var(--font-family)',
               fontSize,
-              overflowY: 'visible'
+              overflowY: isHorizontalMultiModelLayout ? 'auto' : 'visible'
             }}>
             <MessageErrorBoundary>
               <MessageContent message={message} />
             </MessageErrorBoundary>
+            <MessageVersionSwitcher message={message} />
           </MessageContentContainer>
           {showMenubar && (
-            <MessageFooter
-              className="MessageFooter"
-              $isLastMessage={isLastMessage}
-              $messageStyle={messageStyle}
-              onClick={(e) => e.stopPropagation()}>
-<MessageMenubar
-  message={message}
-  assistant={assistant as Assistant}
-  model={model}
-  index={index}
-  topic={topic}
-  isLastMessage={isLastMessage}
-  isAssistantMessage={isAssistantMessage}
-  isGrouped={isGrouped}
-  messageContainerRef={messageContainerRef as React.RefObject<HTMLDivElement>}
-  setModel={setModel}
-  onUpdateUseful={onUpdateUseful}
-                deleteConfirmOpen={deleteConfirmOpen}
-                onToggleDeleteConfirm={handleDeleteConfirmClick}
-/>
+            <MessageFooter className="MessageFooter" onClick={(e) => e.stopPropagation()}>
+              <HorizontalScrollContainer
+                classNames={{
+                  content: cn(
+                    'flex-1 items-center justify-between',
+                    isLastMessage && messageStyle === 'plain' ? 'flex-row-reverse' : 'flex-row'
+                  )
+                }}>
+                <MessageMenubar
+                  message={message}
+                  assistant={assistant}
+                  model={model}
+                  index={index}
+                  topic={topic}
+                  isLastMessage={isLastMessage}
+                  isAssistantMessage={isAssistantMessage}
+                  isGrouped={isGrouped}
+                  messageContainerRef={messageContainerRef as React.RefObject<HTMLDivElement>}
+                  setModel={setModel}
+                  onUpdateUseful={onUpdateUseful}
+                  deleteConfirmOpen={deleteConfirmOpen}
+                  onToggleDeleteConfirm={handleDeleteConfirmClick}
+                />
+              </HorizontalScrollContainer>
             </MessageFooter>
           )}
         </>
@@ -319,7 +339,6 @@ const MessageItem: FC<Props> = ({
           open={contextMenuOpen}
           onOpenChange={(open) => {
             if (open && hasSelection()) {
-              // 有选中文本时，不打开消息右键菜单
               setContextMenuOpen(false)
               return
             }
@@ -373,10 +392,8 @@ const MessageContentContainer = styled(Scrollbar)`
   overflow-y: auto;
 `
 
-const MessageFooter = styled.div<{ $isLastMessage: boolean; $messageStyle: 'plain' | 'bubble' }>`
+const MessageFooter = styled.div`
   display: flex;
-  flex-direction: ${({ $isLastMessage, $messageStyle }) =>
-    $isLastMessage && $messageStyle === 'plain' ? 'row-reverse' : 'row'};
   align-items: center;
   justify-content: space-between;
   gap: 10px;

@@ -1,10 +1,11 @@
+import { OpenClawIcon } from '@renderer/components/Icons/SVGIcon'
 import App from '@renderer/components/MinApp/MinApp'
 import { useMinapps } from '@renderer/hooks/useMinapps'
 import { useRuntime } from '@renderer/hooks/useRuntime'
 import { useSettings } from '@renderer/hooks/useSettings'
-import tabsService from '@renderer/services/TabsService'
 import { Code, FileSearch, Folder, Languages, LayoutGrid, NotepadText, Palette, Sparkle } from 'lucide-react'
-import { FC, useMemo } from 'react'
+import type { FC } from 'react'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
@@ -37,8 +38,8 @@ const LaunchpadPage: FC = () => {
     },
     {
       icon: <Sparkle size={32} className="icon" />,
-      text: t('title.agents'),
-      path: '/agents',
+      text: t('title.store'),
+      path: '/store',
       bgColor: 'linear-gradient(135deg, #6366F1, #4F46E5)' // AI助手：靛蓝渐变，代表智能和科技
     },
     {
@@ -58,6 +59,12 @@ const LaunchpadPage: FC = () => {
       text: t('title.code'),
       path: '/code',
       bgColor: 'linear-gradient(135deg, #1F2937, #374151)' // Code CLI：高级暗黑色，代表专业和技术
+    },
+    {
+      icon: <OpenClawIcon className="icon" />,
+      text: t('title.openclaw'),
+      path: '/openclaw',
+      bgColor: 'linear-gradient(135deg, #EF4444, #B91C1C)' // OpenClaw：红色渐变，代表龙虾的颜色
     },
     {
       icon: <NotepadText size={32} className="icon" />,
@@ -105,7 +112,7 @@ const LaunchpadPage: FC = () => {
             <Grid>
               {sortedMinapps.map((app) => (
                 <AppWrapper key={app.id}>
-                  <App app={app} size={56} onClick={() => setTimeout(() => tabsService.closeTab('launchpad'), 350)} />
+                  <App app={app} size={56} />
                 </AppWrapper>
               ))}
             </Grid>

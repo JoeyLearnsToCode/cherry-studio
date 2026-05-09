@@ -1,4 +1,5 @@
-import '@renderer/assets/styles/index.scss'
+import '@renderer/assets/styles/index.css'
+import '@renderer/assets/styles/tailwind.css'
 import '@ant-design/v5-patch-for-react-19'
 
 import KeyvStorage from '@kangfenmao/keyv-storage'
@@ -18,7 +19,7 @@ loggerService.initWindowSource('MiniWindow')
  */
 function initKeyv() {
   window.keyv = new KeyvStorage()
-  window.keyv.init()
+  void window.keyv.init()
 }
 initKeyv()
 

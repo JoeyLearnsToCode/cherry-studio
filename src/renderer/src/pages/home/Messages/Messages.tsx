@@ -1,7 +1,6 @@
 import { loggerService } from '@logger'
 import ContextMenu from '@renderer/components/ContextMenu'
 import { LoadingIcon } from '@renderer/components/Icons'
-import Scrollbar from '@renderer/components/Scrollbar'
 import { LOAD_MORE_COUNT } from '@renderer/config/constant'
 import { useAssistant } from '@renderer/hooks/useAssistant'
 import { useChatContext } from '@renderer/hooks/useChatContext'
@@ -10,7 +9,7 @@ import useScrollPosition from '@renderer/hooks/useScrollPosition'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
 import { useTimer } from '@renderer/hooks/useTimer'
-import { autoRenameTopic, getTopic } from '@renderer/hooks/useTopic'
+import { autoRenameTopic } from '@renderer/hooks/useTopic'
 import SelectionBox from '@renderer/pages/home/Messages/SelectionBox'
 import { getDefaultTopic } from '@renderer/services/AssistantService'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
@@ -21,7 +20,8 @@ import { messageBlocksSelectors, updateOneBlock } from '@renderer/store/messageB
 import { newMessagesActions } from '@renderer/store/newMessage'
 import { saveMessageAndBlocksToDB, updateMessageAndBlocksThunk } from '@renderer/store/thunk/messageThunk'
 import type { Assistant, Topic } from '@renderer/types'
-import { type Message, MessageBlock, MessageBlockType } from '@renderer/types/newMessage'
+import type { MessageBlock } from '@renderer/types/newMessage'
+import { type Message, MessageBlockType } from '@renderer/types/newMessage'
 import {
   captureScrollableAsBlob,
   captureScrollableAsDataURL,
@@ -41,6 +41,7 @@ import MessageAnchorLine from './MessageAnchorLine'
 import MessageGroup from './MessageGroup'
 import NarrowLayout from './NarrowLayout'
 import Prompt from './Prompt'
+import { MessagesContainer, ScrollContainer } from './shared'
 
 interface MessagesProps {
   assistant: Assistant
@@ -61,7 +62,7 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [isProcessingContext, setIsProcessingContext] = useState(false)
 
-  const { updateTopic, addTopic } = useAssistant(assistant.id)
+  const { addTopic } = useAssistant(assistant.id)
   const { showPrompt, messageNavigation } = useSettings()
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
@@ -105,22 +106,15 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
 
   const clearTopic = useCallback(
     async (data: Topic) => {
-      const defaultTopic = getDefaultTopic(assistant.id)
-
       if (data && data.id !== topic.id) {
         await clearTopicMessages(data.id)
-        updateTopic({ ...data, name: defaultTopic.name } as Topic)
         return
       }
 
       await clearTopicMessages()
-
       setDisplayMessages([])
-
-      const _topic = getTopic(assistant, topic.id)
-      _topic && updateTopic({ ..._topic, name: defaultTopic.name } as Topic)
     },
-    [assistant, clearTopicMessages, topic.id, updateTopic]
+    [clearTopicMessages, topic.id]
   )
 
   useEffect(() => {
@@ -144,7 +138,7 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
       EventEmitter.on(EVENT_NAMES.EXPORT_TOPIC_IMAGE, async () => {
         const imageData = await captureScrollableAsDataURL(scrollContainerRef)
         if (imageData) {
-          window.api.file.saveImage(removeSpecialCharactersForFileName(topic.name), imageData)
+          void window.api.file.saveImage(removeSpecialCharactersForFileName(topic.name), imageData)
         }
       }),
       EventEmitter.on(EVENT_NAMES.NEW_CONTEXT, async () => {
@@ -168,7 +162,7 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
 
           const { message: clearMessage } = getUserMessage({ assistant, topic, type: 'clear' })
           dispatch(newMessagesActions.addMessage({ topicId: topic.id, message: clearMessage }))
-          await saveMessageAndBlocksToDB(clearMessage, [])
+          await saveMessageAndBlocksToDB(topic.id, clearMessage, [])
 
           scrollToBottom()
         } finally {
@@ -195,13 +189,13 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
           // 3. Set the new topic as active
           setActiveTopic(newTopic)
           // 4. Trigger auto-rename for the new topic
-          autoRenameTopic(assistant, newTopic.id)
+          void autoRenameTopic(assistant, newTopic.id)
         } else {
           // Optional: Handle cloning failure (e.g., show an error message)
           // You might want to remove the added topic if cloning fails
           // removeTopic(newTopic.id); // Assuming you have a removeTopic function
           logger.error(`[NEW_BRANCH] Failed to create topic branch for topic ${newTopic.id}`)
-          window.message.error(t('message.branch.error')) // Example error message
+          window.toast.error(t('message.branch.error')) // Example error message
         }
       }),
       EventEmitter.on(
@@ -224,19 +218,19 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
               dispatch(updateOneBlock({ id: msgBlockId, changes: { content: updatedRaw } }))
               await dispatch(updateMessageAndBlocksThunk(topic.id, null, [updatedBlock]))
 
-              window.message.success({ content: t('code_block.edit.save.success'), key: 'save-code' })
+              window.toast.success(t('code_block.edit.save.success'))
             } catch (error) {
               logger.error(
                 `Failed to save code block ${codeBlockId} content to message block ${msgBlockId}:`,
                 error as Error
               )
-              window.message.error({ content: t('code_block.edit.save.failed.label'), key: 'save-code-failed' })
+              window.toast.error(t('code_block.edit.save.failed.label'))
             }
           } else {
             logger.error(
               `Failed to save code block ${codeBlockId} content to message block ${msgBlockId}: no such message block or the block doesn't have a content field`
             )
-            window.message.error({ content: t('code_block.edit.save.failed.label'), key: 'save-code-failed' })
+            window.toast.error(t('code_block.edit.save.failed.label'))
           }
         }
       )
@@ -247,8 +241,8 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
   }, [assistant, dispatch, scrollToBottom, topic, isProcessingContext])
 
   useEffect(() => {
-    runAsyncFunction(async () => {
-      EventEmitter.emit(EVENT_NAMES.ESTIMATED_TOKEN_COUNT, {
+    void runAsyncFunction(async () => {
+      void EventEmitter.emit(EVENT_NAMES.ESTIMATED_TOKEN_COUNT, {
         tokensCount: await estimateHistoryTokens(assistant, messages),
         contextCount: getContextCount(assistant, messages)
       })
@@ -276,8 +270,15 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
   useShortcut('copy_last_message', () => {
     const lastMessage = last(messages)
     if (lastMessage) {
-      navigator.clipboard.writeText(getMainTextContent(lastMessage))
-      window.message.success(t('message.copy.success'))
+      void navigator.clipboard.writeText(getMainTextContent(lastMessage))
+      window.toast.success(t('message.copy.success'))
+    }
+  })
+
+  useShortcut('edit_last_user_message', () => {
+    const lastUserMessage = messagesRef.current.findLast((m) => m.role === 'user' && m.type !== 'clear')
+    if (lastUserMessage) {
+      void EventEmitter.emit(EVENT_NAMES.EDIT_MESSAGE, lastUserMessage.id)
     }
   })
 
@@ -337,7 +338,9 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
 
         {showPrompt && <Prompt assistant={assistant} key={assistant.prompt} topic={topic} />}
       </NarrowLayout>
-      {(messageNavigation === 'anchor' || messageNavigation === 'both') && <MessageAnchorLine messages={displayMessages} />}
+      {(messageNavigation === 'anchor' || messageNavigation === 'both') && (
+        <MessageAnchorLine messages={displayMessages} />
+      )}
       <SelectionBox
         isMultiSelectMode={isMultiSelectMode}
         scrollContainerRef={scrollContainerRef}
@@ -349,13 +352,14 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
 }
 
 const computeDisplayMessages = (messages: Message[], startIndex: number, displayCount: number) => {
-  const reversedMessages = [...messages].reverse()
-
-  // 如果剩余消息数量小于 displayCount，直接返回所有剩余消息
-  if (reversedMessages.length - startIndex <= displayCount) {
-    return reversedMessages.slice(startIndex)
+  // 如果剩余消息数量小于 displayCount，直接返回所有剩余消息的倒序切片
+  if (messages.length - startIndex <= displayCount) {
+    const result: Message[] = []
+    for (let i = messages.length - 1 - startIndex; i >= 0; i--) {
+      result.push(messages[i])
+    }
+    return result
   }
-
   const userIdSet = new Set() // 用户消息 id 集合
   const assistantIdSet = new Set() // 助手消息 askId 集合
   const displayMessages: Message[] = []
@@ -376,9 +380,9 @@ const computeDisplayMessages = (messages: Message[], startIndex: number, display
     displayMessages.push(message)
   }
 
-  // 遍历消息直到满足显示数量要求
-  for (let i = startIndex; i < reversedMessages.length && userIdSet.size + assistantIdSet.size < displayCount; i++) {
-    processMessage(reversedMessages[i])
+  // 直接在原数组上倒序遍历，跳过前 startIndex 个，避免全量拷贝和 reverse()
+  for (let i = messages.length - 1 - startIndex; i >= 0 && userIdSet.size + assistantIdSet.size < displayCount; i--) {
+    processMessage(messages[i])
   }
 
   return displayMessages
@@ -391,27 +395,6 @@ const LoaderContainer = styled.div`
   width: 100%;
   background: var(--color-background);
   pointer-events: none;
-`
-
-const ScrollContainer = styled.div`
-  display: flex;
-  flex-direction: column-reverse;
-  padding: 10px 10px 20px;
-  .multi-select-mode & {
-    padding-bottom: 60px;
-  }
-`
-
-interface ContainerProps {
-  $right?: boolean
-}
-
-const MessagesContainer = styled(Scrollbar)<ContainerProps>`
-  display: flex;
-  flex-direction: column-reverse;
-  overflow-x: hidden;
-  z-index: 1;
-  position: relative;
 `
 
 export default Messages

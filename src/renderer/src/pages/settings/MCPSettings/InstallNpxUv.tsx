@@ -3,7 +3,8 @@ import { Center, VStack } from '@renderer/components/Layout'
 import { useAppDispatch, useAppSelector } from '@renderer/store'
 import { setIsBunInstalled, setIsUvInstalled } from '@renderer/store/mcp'
 import { Alert, Button } from 'antd'
-import { FC, useCallback, useEffect, useRef, useState } from 'react'
+import type { FC } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
 import styled from 'styled-components'
@@ -54,7 +55,7 @@ const InstallNpxUv: FC<Props> = ({ mini = false }) => {
       setIsInstallingUv(false)
       dispatch(setIsUvInstalled(true))
     } catch (error: any) {
-      window.message.error({ content: `${t('settings.mcp.installError')}: ${error.message}`, key: 'mcp-install-error' })
+      window.toast.error(`${t('settings.mcp.installError')}: ${error.message}`)
       setIsInstallingUv(false)
     }
     clearTimeout(checkBinariesTimerRef.current)
@@ -68,10 +69,7 @@ const InstallNpxUv: FC<Props> = ({ mini = false }) => {
       setIsInstallingBun(false)
       dispatch(setIsBunInstalled(true))
     } catch (error: any) {
-      window.message.error({
-        content: `${t('settings.mcp.installError')}: ${error.message}`,
-        key: 'mcp-install-error'
-      })
+      window.toast.error(`${t('settings.mcp.installError')}: ${error.message}`)
       setIsInstallingBun(false)
     }
     clearTimeout(checkBinariesTimerRef.current)
@@ -79,7 +77,7 @@ const InstallNpxUv: FC<Props> = ({ mini = false }) => {
   }
 
   useEffect(() => {
-    checkBinaries()
+    void checkBinaries()
   }, [checkBinaries])
 
   if (mini) {
@@ -99,7 +97,7 @@ const InstallNpxUv: FC<Props> = ({ mini = false }) => {
 
   const openBinariesDir = () => {
     if (binariesDir) {
-      window.api.openPath(binariesDir)
+      void window.api.openPath(binariesDir)
     }
   }
 
@@ -111,7 +109,6 @@ const InstallNpxUv: FC<Props> = ({ mini = false }) => {
     <Container>
       <Alert
         type={isUvInstalled ? 'success' : 'warning'}
-        banner
         style={{ borderRadius: 'var(--list-item-border-radius)' }}
         description={
           <VStack>
@@ -142,7 +139,6 @@ const InstallNpxUv: FC<Props> = ({ mini = false }) => {
       />
       <Alert
         type={isBunInstalled ? 'success' : 'warning'}
-        banner
         style={{ borderRadius: 'var(--list-item-border-radius)' }}
         description={
           <VStack>

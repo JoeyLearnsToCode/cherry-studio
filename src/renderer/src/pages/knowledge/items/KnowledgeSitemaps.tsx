@@ -6,11 +6,12 @@ import { DynamicVirtualList } from '@renderer/components/VirtualList'
 import { useKnowledge } from '@renderer/hooks/useKnowledge'
 import FileItem from '@renderer/pages/files/FileItem'
 import { getProviderName } from '@renderer/services/ProviderService'
-import { KnowledgeBase, KnowledgeItem } from '@renderer/types'
+import type { KnowledgeBase, KnowledgeItem } from '@renderer/types'
 import { Button, message, Tooltip } from 'antd'
 import dayjs from 'dayjs'
 import { PlusIcon } from 'lucide-react'
-import { FC, useCallback, useMemo } from 'react'
+import type { FC } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
@@ -22,6 +23,7 @@ import {
   ItemHeader,
   KnowledgeEmptyView,
   RefreshIcon,
+  ResponsiveButton,
   StatusIconWrapper
 } from '../KnowledgeContent'
 
@@ -85,16 +87,16 @@ const KnowledgeSitemaps: FC<KnowledgeContentProps> = ({ selectedBase }) => {
   return (
     <ItemContainer>
       <ItemHeader>
-        <Button
+        <ResponsiveButton
           type="primary"
           icon={<PlusIcon size={16} />}
           onClick={(e) => {
             e.stopPropagation()
-            handleAddSitemap()
+            void handleAddSitemap()
           }}
           disabled={disabled}>
           {t('knowledge.add_sitemap')}
-        </Button>
+        </ResponsiveButton>
       </ItemHeader>
       <ItemFlexColumn>
         {sitemapItems.length === 0 && <KnowledgeEmptyView />}

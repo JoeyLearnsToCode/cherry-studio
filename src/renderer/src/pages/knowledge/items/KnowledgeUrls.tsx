@@ -5,11 +5,12 @@ import { DynamicVirtualList } from '@renderer/components/VirtualList'
 import { useKnowledge } from '@renderer/hooks/useKnowledge'
 import FileItem from '@renderer/pages/files/FileItem'
 import { getProviderName } from '@renderer/services/ProviderService'
-import { KnowledgeBase, KnowledgeItem } from '@renderer/types'
+import type { KnowledgeBase, KnowledgeItem } from '@renderer/types'
 import { Button, Dropdown, Tooltip } from 'antd'
 import dayjs from 'dayjs'
 import { PlusIcon } from 'lucide-react'
-import { FC, useCallback, useMemo } from 'react'
+import type { FC } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
@@ -21,6 +22,7 @@ import {
   ItemHeader,
   KnowledgeEmptyView,
   RefreshIcon,
+  ResponsiveButton,
   StatusIconWrapper
 } from '../KnowledgeContent'
 
@@ -75,7 +77,10 @@ const KnowledgeUrls: FC<KnowledgeContentProps> = ({ selectedBase }) => {
           if (!urlItems.find((item) => item.content === url.trim())) {
             addUrl(url.trim())
           } else {
-            window.message.success(t('knowledge.url_added'))
+            window.toast.warning({
+              title: t('knowledge.url_added'),
+              key: `url-added`
+            })
           }
         } catch (e) {
           // Skip invalid URLs silently
@@ -113,16 +118,16 @@ const KnowledgeUrls: FC<KnowledgeContentProps> = ({ selectedBase }) => {
   return (
     <ItemContainer>
       <ItemHeader>
-        <Button
+        <ResponsiveButton
           type="primary"
           icon={<PlusIcon size={16} />}
           onClick={(e) => {
             e.stopPropagation()
-            handleAddUrl()
+            void handleAddUrl()
           }}
           disabled={disabled}>
           {t('knowledge.add_url')}
-        </Button>
+        </ResponsiveButton>
       </ItemHeader>
       <ItemFlexColumn>
         {urlItems.length === 0 && <KnowledgeEmptyView />}
@@ -152,8 +157,8 @@ const KnowledgeUrls: FC<KnowledgeContentProps> = ({ selectedBase }) => {
                           icon: <CopyIcon size={14} />,
                           label: t('common.copy'),
                           onClick: () => {
-                            navigator.clipboard.writeText(item.content as string)
-                            window.message.success(t('message.copied'))
+                            void navigator.clipboard.writeText(item.content as string)
+                            window.toast.success(t('message.copied'))
                           }
                         }
                       ]

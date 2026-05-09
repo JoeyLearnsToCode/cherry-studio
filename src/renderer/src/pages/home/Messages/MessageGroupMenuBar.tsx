@@ -3,21 +3,26 @@ import {
   ColumnWidthOutlined,
   DeleteOutlined,
   FolderOutlined,
-  NumberOutlined
+  NumberOutlined,
+  ReloadOutlined
 } from '@ant-design/icons'
 import { HStack } from '@renderer/components/Layout'
-import { useMessageOperations } from '@renderer/hooks/useMessageOperations'
-import SelectModelPopup from '@renderer/components/Popups/SelectModelPopup'
+import { SelectModelPopup } from '@renderer/components/Popups/SelectModelPopup'
 import { isEmbeddingModel, isRerankModel, isVisionModel } from '@renderer/config/models'
-import { MultiModelMessageStyle } from '@renderer/store/settings'
+import { useMessageOperations } from '@renderer/hooks/useMessageOperations'
+import { useAllProviders } from '@renderer/hooks/useProvider'
 import store from '@renderer/store'
 import { messageBlocksSelectors } from '@renderer/store/messageBlock'
 import { selectMessagesForTopic } from '@renderer/store/newMessage'
-import type { Topic, Assistant, Model } from '@renderer/types'
-import { type Message, MessageBlockType } from '@renderer/types/newMessage'
+import type { MultiModelMessageStyle } from '@renderer/store/settings'
+import type { Model, Topic } from '@renderer/types'
+import type { Message } from '@renderer/types/newMessage'
+import { AssistantMessageStatus, MessageBlockType } from '@renderer/types/newMessage'
+import { getMainTextContent } from '@renderer/utils/messageUtils/find'
 import { Button, Tooltip } from 'antd'
 import { AtSign, MessageSquarePlus } from 'lucide-react'
-import { FC, memo, useCallback, useMemo } from 'react'
+import type { FC } from 'react'
+import { memo, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
@@ -31,7 +36,7 @@ interface Props {
   selectMessageId: string
   setSelectedMessage: (message: Message) => void
   topic: Topic
-  assistant: Assistant
+  assistant: import('@renderer/types').Assistant
 }
 
 const MessageGroupMenuBar: FC<Props> = ({
@@ -44,7 +49,8 @@ const MessageGroupMenuBar: FC<Props> = ({
   assistant
 }) => {
   const { t } = useTranslation()
-  const { deleteGroupMessages, appendAssistantResponse } = useMessageOperations(topic)
+  const allProviders = useAllProviders()
+  const { deleteGroupMessages, regenerateAssistantMessage, appendAssistantResponse } = useMessageOperations(topic)
 
   const mentionModelFilter = useMemo(() => {
     const defaultFilter = (model: Model) => !isEmbeddingModel(model) && !isRerankModel(model)
@@ -67,7 +73,7 @@ const MessageGroupMenuBar: FC<Props> = ({
   const onSwitchModel = useCallback(async () => {
     const selectedMessage = messages.find((m) => m.id === selectMessageId) || messages[messages.length - 1]
     if (!selectedMessage) return
-    const selectedModel = await SelectModelPopup.show({ model: selectedMessage.model, filter: mentionModelFilter })
+    const selectedModel = await SelectModelPopup.show({ model: selectedMessage.model, providers: allProviders })
     if (!selectedModel) return
     appendAssistantResponse(selectedMessage, selectedModel, { ...assistant, model: selectedModel })
   }, [messages, selectMessageId, mentionModelFilter, appendAssistantResponse, assistant])
@@ -76,7 +82,7 @@ const MessageGroupMenuBar: FC<Props> = ({
     const selectedMessage = messages[messages.length - 1]
     if (!selectedMessage || !selectedMessage.model) return
     appendAssistantResponse(selectedMessage, selectedMessage.model, { ...assistant, model: selectedMessage.model })
-  }, [messages, selectMessageId, appendAssistantResponse, assistant])
+  }, [messages, appendAssistantResponse, assistant])
 
   const handleDeleteGroup = async () => {
     const askId = messages[0]?.askId
@@ -92,6 +98,39 @@ const MessageGroupMenuBar: FC<Props> = ({
       okText: t('common.delete'),
       onOk: () => deleteGroupMessages(askId)
     })
+  }
+
+  const isFailedMessage = (m: Message) => {
+    if (m.role !== 'assistant') return false
+    const isError = (m.status || '').toLowerCase() === 'error'
+    const content = getMainTextContent(m)
+    const noContent = !content || content.trim().length === 0
+    const noBlocks = !m.blocks || m.blocks.length === 0
+    return isError || noContent || noBlocks
+  }
+
+  const isTransmittingMessage = (m: Message) => {
+    if (m.role !== 'assistant') return false
+    const status = m.status as AssistantMessageStatus
+    return (
+      status === AssistantMessageStatus.PROCESSING ||
+      status === AssistantMessageStatus.PENDING ||
+      status === AssistantMessageStatus.SEARCHING
+    )
+  }
+
+  const hasFailedMessages = messages.some((m) => isFailedMessage(m) && !isTransmittingMessage(m))
+
+  const handleRetryAll = async () => {
+    const candidates = messages.filter((m) => isFailedMessage(m) && !isTransmittingMessage(m))
+
+    for (const msg of candidates) {
+      try {
+        await regenerateAssistantMessage(msg, assistant)
+      } catch (e) {
+        // swallow per-item errors to continue others
+      }
+    }
   }
 
   const multiModelMessageStyleTextByLayout = {
@@ -135,15 +174,21 @@ const MessageGroupMenuBar: FC<Props> = ({
         )}
         {multiModelMessageStyle === 'grid' && <MessageGroupSettings />}
       </HStack>
-      <Tooltip title={t('message.regenerate.same_model')} mouseEnterDelay={0.5}>
-        <Button
-          type="text"
-          size="small"
-          icon={<MessageSquarePlus size={15} />}
-          onClick={onRegenerateWithSameModel}
-        />
+      {hasFailedMessages && (
+        <Tooltip title={t('message.group.retry_failed')} mouseEnterDelay={0.6}>
+          <Button
+            type="text"
+            size="small"
+            icon={<ReloadOutlined />}
+            onClick={handleRetryAll}
+            style={{ marginRight: 4 }}
+          />
+        </Tooltip>
+      )}
+      <Tooltip title={t('message.message.regenerate_with_same_model')} mouseEnterDelay={0.6}>
+        <Button type="text" size="small" icon={<MessageSquarePlus size={15} />} onClick={onRegenerateWithSameModel} />
       </Tooltip>
-      <Tooltip title={t('message.mention.title')} mouseEnterDelay={0.5}>
+      <Tooltip title={t('message.message.switch_model')} mouseEnterDelay={0.6}>
         <Button type="text" size="small" icon={<AtSign size={15} />} onClick={onSwitchModel} />
       </Tooltip>
       <Button
@@ -168,10 +213,6 @@ const GroupMenuBar = styled.div<{ $layout: MultiModelMessageStyle }>`
   overflow: hidden;
   border: 0.5px solid var(--color-border);
   height: 40px;
-  position: sticky;
-  bottom: 0;
-  z-index: 10;
-  background-color: var(--color-background);
 `
 
 const LayoutContainer = styled.div`

@@ -37,6 +37,8 @@ dist
 out
 mcp_server
 stats.html
+.eslintcache
+resources/binaries/
 
 # ENV
 .env
@@ -49,19 +51,30 @@ local
 .cursorrules
 .cursor/*
 .claude/*
+!.claude/skills/
+!.claude/skills/**
 .gemini/*
 .qwen/*
 .trae/*
 .claude-code-router/*
+.codebuddy/*
+.zed/*
+!.zed/settings.json.example
 CLAUDE.local.md
 
 # vitest
 coverage
 .vitest-cache
 vitest.config.*.timestamp-*
+.context/vitest-temp/
+
+# TypeScript incremental build
+.tsbuildinfo
 
 # playwright
 playwright-report
 test-results
 
 YOUR_MEMORY_FILE_PATH
+
+.sessions/

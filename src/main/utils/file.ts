@@ -1,11 +1,13 @@
+import { createHash } from 'node:crypto'
 import * as fs from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
 import { loggerService } from '@logger'
-import { audioExts, documentExts, imageExts, MB, textExts, videoExts } from '@shared/config/constant'
-import { FileMetadata, FileTypes, NotesTreeNode } from '@types'
+import { audioExts, documentExts, HOME_CHERRY_DIR, imageExts, MB, textExts, videoExts } from '@shared/config/constant'
+import type { FileMetadata, FileType, NotesTreeNode } from '@types'
+import { FILE_TYPE } from '@types'
 import chardet from 'chardet'
 import { app } from 'electron'
 import iconv from 'iconv-lite'
@@ -14,19 +16,38 @@ import { v4 as uuidv4 } from 'uuid'
 const logger = loggerService.withContext('Utils:File')
 
 // 创建文件类型映射表，提高查找效率
-const fileTypeMap = new Map<string, FileTypes>()
+const fileTypeMap = new Map<string, FileType>()
 
 // 初始化映射表
 function initFileTypeMap() {
-  imageExts.forEach((ext) => fileTypeMap.set(ext, FileTypes.IMAGE))
-  videoExts.forEach((ext) => fileTypeMap.set(ext, FileTypes.VIDEO))
-  audioExts.forEach((ext) => fileTypeMap.set(ext, FileTypes.AUDIO))
-  textExts.forEach((ext) => fileTypeMap.set(ext, FileTypes.TEXT))
-  documentExts.forEach((ext) => fileTypeMap.set(ext, FileTypes.DOCUMENT))
+  imageExts.forEach((ext) => fileTypeMap.set(ext, FILE_TYPE.IMAGE))
+  videoExts.forEach((ext) => fileTypeMap.set(ext, FILE_TYPE.VIDEO))
+  audioExts.forEach((ext) => fileTypeMap.set(ext, FILE_TYPE.AUDIO))
+  textExts.forEach((ext) => fileTypeMap.set(ext, FILE_TYPE.TEXT))
+  documentExts.forEach((ext) => fileTypeMap.set(ext, FILE_TYPE.DOCUMENT))
 }
 
 // 初始化映射表
 initFileTypeMap()
+
+/**
+ * Resolves a relative path against a base directory and validates it is within bounds.
+ * Prevents path traversal attacks (e.g., ../../../etc/passwd).
+ *
+ * @param baseDir - The base directory
+ * @param relativePath - The relative path (may contain '..')
+ * @returns The resolved absolute file path
+ * @throws Error if resolved path is outside base directory
+ */
+export function resolveAndValidatePath(baseDir: string, relativePath: string): string {
+  const resolvedBase = path.resolve(baseDir)
+  const resolvedPath = path.resolve(baseDir, relativePath)
+  const separator = resolvedBase.endsWith(path.sep) ? '' : path.sep
+  if (!resolvedPath.startsWith(resolvedBase + separator)) {
+    throw new Error('Invalid file path: path traversal detected')
+  }
+  return resolvedPath
+}
 
 export function untildify(pathWithTilde: string) {
   if (pathWithTilde.startsWith('~')) {
@@ -82,9 +103,9 @@ export function isPathInside(childPath: string, parentPath: string): boolean {
   }
 }
 
-export function getFileType(ext: string): FileTypes {
+export function getFileType(ext: string): FileType {
   ext = ext.toLowerCase()
-  return fileTypeMap.get(ext) || FileTypes.OTHER
+  return fileTypeMap.get(ext) || FILE_TYPE.OTHER
 }
 
 export function getFileDir(filePath: string) {
@@ -114,7 +135,7 @@ export function getAllFiles(dirPath: string, arrayOfFiles: FileMetadata[] = []):
       const ext = path.extname(file)
       const fileType = getFileType(ext)
 
-      if ([FileTypes.OTHER, FileTypes.IMAGE, FileTypes.VIDEO, FileTypes.AUDIO].includes(fileType)) {
+      if ([FILE_TYPE.OTHER, FILE_TYPE.IMAGE, FILE_TYPE.VIDEO, FILE_TYPE.AUDIO].some((type) => type === fileType)) {
         return
       }
 
@@ -158,7 +179,7 @@ export function getNotesDir() {
 }
 
 export function getConfigDir() {
-  return path.join(os.homedir(), '.cherrystudio', 'config')
+  return path.join(os.homedir(), HOME_CHERRY_DIR, 'config')
 }
 
 export function getCacheDir() {
@@ -170,7 +191,7 @@ export function getAppConfigDir(name: string) {
 }
 
 export function getMcpDir() {
-  return path.join(os.homedir(), '.cherrystudio', 'mcp')
+  return path.join(os.homedir(), HOME_CHERRY_DIR, 'mcp')
 }
 
 /**
@@ -203,6 +224,84 @@ export async function readTextFileWithAutoEncoding(filePath: string): Promise<st
 
   logger.error(`File ${filePath} failed to decode with all possible encodings, trying UTF-8 encoding`)
   return iconv.decode(data, 'UTF-8')
+}
+
+export async function writeWithLock(
+  filePath: string,
+  data: string | NodeJS.ArrayBufferView,
+  options: (fs.ObjectEncodingOptions & { mode?: number; flag?: string }) & {
+    atomic?: boolean
+    tempPath?: string
+    lockFilePath?: string
+    retries?: number
+    retryDelayMs?: number
+    lockStaleMs?: number
+  } = {}
+): Promise<void> {
+  const {
+    atomic = false,
+    tempPath,
+    lockFilePath = `${filePath}.lock`,
+    retries = 50,
+    retryDelayMs = 50,
+    lockStaleMs = 30_000,
+    ...writeOptions
+  } = options
+
+  const finalTempPath = tempPath ?? `${filePath}.tmp`
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const handle = await fs.promises.open(lockFilePath, 'wx')
+      await handle.close()
+
+      try {
+        if (atomic) {
+          await fs.promises.writeFile(finalTempPath, data, writeOptions)
+          await fs.promises.rename(finalTempPath, filePath)
+        } else {
+          await fs.promises.writeFile(filePath, data, writeOptions)
+        }
+      } finally {
+        await fs.promises.unlink(lockFilePath).catch(() => undefined)
+      }
+
+      return
+    } catch (error) {
+      const nodeError = error as NodeJS.ErrnoException
+      if (nodeError.code !== 'EEXIST' || attempt >= retries) {
+        throw error
+      }
+
+      if (lockStaleMs > 0) {
+        try {
+          const stats = await fs.promises.stat(lockFilePath)
+          if (Date.now() - stats.mtimeMs > lockStaleMs) {
+            await fs.promises.unlink(lockFilePath)
+            continue
+          }
+        } catch {
+          // Ignore stale checks if lock file disappears or stat fails
+        }
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs))
+    }
+  }
+}
+
+export async function base64Image(file: FileMetadata): Promise<{ mime: string; base64: string; data: string }> {
+  const filePath = path.join(getFilesDir(), `${file.id}${file.ext}`)
+  const data = await fs.promises.readFile(filePath)
+  const base64 = data.toString('base64')
+  const rawExt = path.extname(filePath).slice(1)
+  const ext = rawExt === 'jpg' ? 'jpeg' : rawExt
+  const mime = ext ? `image/${ext}` : 'image/png'
+  return {
+    mime,
+    base64,
+    data: `data:${mime};base64,${base64}`
+  }
 }
 
 /**
@@ -251,11 +350,12 @@ export async function scanDir(dirPath: string, depth = 0, basePath?: string): Pr
 
     if (entry.isDirectory() && options.includeDirectories) {
       const stats = await fs.promises.stat(entryPath)
+      const externalDirPath = entryPath.replace(/\\/g, '/')
       const dirTreeNode: NotesTreeNode = {
-        id: uuidv4(),
+        id: createHash('sha1').update(externalDirPath).digest('hex'),
         name: entry.name,
         treePath: treePath,
-        externalPath: entryPath,
+        externalPath: externalDirPath,
         createdAt: stats.birthtime.toISOString(),
         updatedAt: stats.mtime.toISOString(),
         type: 'folder',
@@ -286,11 +386,12 @@ export async function scanDir(dirPath: string, depth = 0, basePath?: string): Pr
         ? `/${dirRelativePath.replace(/\\/g, '/')}/${nameWithoutExt}`
         : `/${nameWithoutExt}`
 
+      const externalFilePath = entryPath.replace(/\\/g, '/')
       const fileTreeNode: NotesTreeNode = {
-        id: uuidv4(),
+        id: createHash('sha1').update(externalFilePath).digest('hex'),
         name: name,
         treePath: fileTreePath,
-        externalPath: entryPath,
+        externalPath: externalFilePath,
         createdAt: stats.birthtime.toISOString(),
         updatedAt: stats.mtime.toISOString(),
         type: 'file'
@@ -385,11 +486,15 @@ export function validateFileName(fileName: string, platform = process.platform):
  * @returns 合法的文件名
  */
 export function checkName(fileName: string): string {
-  const validation = validateFileName(fileName)
+  const baseName = path.basename(fileName)
+  const validation = validateFileName(baseName)
   if (!validation.valid) {
-    throw new Error(`Invalid file name: ${fileName}. ${validation.error}`)
+    // 自动清理非法字符，而不是抛出错误
+    const sanitized = sanitizeFilename(baseName)
+    logger.warn(`File name contains invalid characters, auto-sanitized: "${baseName}" -> "${sanitized}"`)
+    return sanitized
   }
-  return fileName
+  return baseName
 }
 
 /**
@@ -403,7 +508,7 @@ export function sanitizeFilename(fileName: string, replacement = '_'): string {
 
   // 移除或替换非法字符
   let sanitized = fileName
-    // eslint-disable-next-line no-control-regex
+    // oxlint-disable-next-line no-control-regex
     .replace(/[<>:"/\\|?*\x00-\x1f]/g, replacement) // Windows 非法字符
     .replace(/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)/i, replacement + '$2') // Windows 保留名
     .replace(/[\s.]+$/, '') // 移除末尾的空格和点
@@ -415,4 +520,40 @@ export function sanitizeFilename(fileName: string, replacement = '_'): string {
   }
 
   return sanitized
+}
+
+/**
+ * Check if a directory exists at the given path
+ */
+export async function directoryExists(dirPath: string): Promise<boolean> {
+  try {
+    const stats = await fs.promises.stat(dirPath)
+    return stats.isDirectory()
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Check if a path exists (file or directory)
+ */
+export async function pathExists(targetPath: string): Promise<boolean> {
+  try {
+    await fs.promises.access(targetPath, fs.constants.R_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Check if a file exists at the given path
+ */
+export async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    const stats = await fs.promises.stat(filePath)
+    return stats.isFile()
+  } catch {
+    return false
+  }
 }

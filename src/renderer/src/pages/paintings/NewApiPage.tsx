@@ -1,12 +1,12 @@
 import { PlusOutlined } from '@ant-design/icons'
 import { loggerService } from '@logger'
-import AiProvider from '@renderer/aiCore'
+import { AiProvider } from '@renderer/aiCore'
 import IcImageUp from '@renderer/assets/images/paintings/ic_ImageUp.svg'
 import { Navbar, NavbarCenter, NavbarRight } from '@renderer/components/app/Navbar'
 import Scrollbar from '@renderer/components/Scrollbar'
 import TranslateButton from '@renderer/components/TranslateButton'
 import { isMac } from '@renderer/config/constant'
-import { getProviderLogo } from '@renderer/config/providers'
+import { getProviderLogo, PROVIDER_URLS } from '@renderer/config/providers'
 import { LanguagesEnum } from '@renderer/config/translate'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import { usePaintings } from '@renderer/hooks/usePaintings'
@@ -17,8 +17,7 @@ import {
   getPaintingsBackgroundOptionsLabel,
   getPaintingsImageSizeOptionsLabel,
   getPaintingsModerationOptionsLabel,
-  getPaintingsQualityOptionsLabel,
-  getProviderLabel
+  getPaintingsQualityOptionsLabel
 } from '@renderer/i18n/label'
 import PaintingsList from '@renderer/pages/paintings/components/PaintingsList'
 import { DEFAULT_PAINTING, MODELS, SUPPORTED_MODELS } from '@renderer/pages/paintings/config/NewApiConfig'
@@ -27,11 +26,15 @@ import { translateText } from '@renderer/services/TranslateService'
 import { useAppDispatch } from '@renderer/store'
 import { setGenerating } from '@renderer/store/runtime'
 import type { PaintingAction, PaintingsState } from '@renderer/types'
-import { FileMetadata } from '@renderer/types'
+import type { FileMetadata } from '@renderer/types'
 import { getErrorMessage, uuid } from '@renderer/utils'
+import { isNewApiProvider } from '@renderer/utils/provider'
 import { Avatar, Button, Empty, InputNumber, Segmented, Select, Upload } from 'antd'
 import TextArea from 'antd/es/input/TextArea'
-import React, { FC } from 'react'
+import type { RcFile } from 'antd/es/upload'
+import type { UploadFile } from 'antd/es/upload/interface'
+import type { FC } from 'react'
+import React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -40,7 +43,8 @@ import styled from 'styled-components'
 import SendMessageButton from '../home/Inputbar/SendMessageButton'
 import { SettingHelpLink, SettingTitle } from '../settings'
 import Artboard from './components/Artboard'
-import { checkProviderEnabled } from './utils'
+import ProviderSelect from './components/ProviderSelect'
+import { checkProviderEnabled, findPaintingByFiles } from './utils'
 
 const logger = loggerService.withContext('NewApiPage')
 
@@ -55,8 +59,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     }
   }, [openai_image_generate, openai_image_edit])
 
-  const filteredPaintings = useMemo(() => newApiPaintings[mode] || [], [newApiPaintings, mode])
-  const [painting, setPainting] = useState<PaintingAction>(filteredPaintings[0] || DEFAULT_PAINTING)
+  // moved below after newApiProvider is defined
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
   const [abortController, setAbortController] = useState<AbortController | null>(null)
@@ -67,27 +70,22 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   const { t } = useTranslation()
   const { theme } = useTheme()
   const providers = useAllProviders()
-  const providerOptions = Options.map((option) => {
-    const provider = providers.find((p) => p.id === option)
-    if (provider) {
-      return {
-        label: getProviderLabel(provider.id),
-        value: provider.id
-      }
-    } else {
-      return {
-        label: 'Unknown Provider',
-        value: undefined
-      }
-    }
-  })
+  const location = useLocation()
+  const routeName = location.pathname.split('/').pop() || 'new-api'
+  const newApiProviders = providers.filter((p) => isNewApiProvider(p))
+
   const dispatch = useAppDispatch()
   const { generating } = useRuntime()
   const navigate = useNavigate()
-  const location = useLocation()
   const { autoTranslateWithSpace } = useSettings()
   const spaceClickTimer = useRef<NodeJS.Timeout>(null)
-  const newApiProvider = providers.find((p) => p.id === 'new-api')!
+  const newApiProvider = newApiProviders.find((p) => p.id === routeName) || newApiProviders[0]
+
+  const filteredPaintings = useMemo(
+    () => (newApiPaintings[mode] || []).filter((p) => p.providerId === newApiProvider.id),
+    [newApiPaintings, mode, newApiProvider.id]
+  )
+  const [painting, setPainting] = useState<PaintingAction>({ ...DEFAULT_PAINTING, providerId: newApiProvider.id })
 
   const modeOptions = [
     { label: t('paintings.mode.generate'), value: 'openai_image_generate' },
@@ -97,15 +95,61 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   const textareaRef = useRef<any>(null)
 
   // 获取编辑模式的图片文件
-  const editImages = useMemo(() => {
-    return editImageFiles
-  }, [editImageFiles])
+  const editImages = editImageFiles
 
-  const updatePaintingState = (updates: Partial<PaintingAction>) => {
-    const updatedPainting = { ...painting, ...updates }
-    setPainting(updatedPainting)
-    updatePainting(mode, updatedPainting)
-  }
+  useEffect(() => {
+    if (mode !== 'openai_image_edit') {
+      return
+    }
+
+    let isActive = true
+
+    const syncEditImages = async () => {
+      if (painting.files.length === 0) {
+        setEditImageFiles([])
+        return
+      }
+
+      try {
+        const files = await Promise.all(
+          painting.files.map(async (file, index) => {
+            const { data, mime } = await window.api.file.binaryImage(file.id + file.ext)
+            const fileName = file.name || `image_${index + 1}${file.ext}`
+
+            return new File([data], fileName, {
+              type: mime,
+              lastModified: new Date(file.created_at).getTime()
+            })
+          })
+        )
+
+        if (isActive) {
+          setEditImageFiles(files)
+        }
+      } catch (error) {
+        logger.error('Failed to sync edit images from selected painting:', error as Error)
+
+        if (isActive) {
+          setEditImageFiles([])
+        }
+      }
+    }
+
+    void syncEditImages()
+
+    return () => {
+      isActive = false
+    }
+  }, [mode, painting.files])
+
+  const updatePaintingState = useCallback(
+    (updates: Partial<PaintingAction>) => {
+      const updatedPainting = { ...painting, providerId: newApiProvider.id, ...updates }
+      setPainting(updatedPainting)
+      updatePainting(mode, updatedPainting)
+    },
+    [painting, newApiProvider.id, mode, updatePainting]
+  )
 
   // ---------------- Model Related Configurations ----------------
   // const modelOptions = MODELS.map((m) => ({ label: m.name, value: m.name }))
@@ -138,9 +182,10 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     return {
       ...DEFAULT_PAINTING,
       model: painting.model || modelOptions[0]?.value || '',
-      id: uuid()
+      id: uuid(),
+      providerId: newApiProvider.id
     }
-  }, [modelOptions, painting.model])
+  }, [modelOptions, painting.model, newApiProvider.id])
 
   const selectedModelConfig = useMemo(
     () => MODELS.find((m) => m.name === painting.model) || MODELS[0],
@@ -198,10 +243,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
         try {
           if (!url?.trim()) {
             logger.error('图像URL为空')
-            window.message.warning({
-              content: t('message.empty_url'),
-              key: 'empty-url-warning'
-            })
+            window.toast.warning(t('message.empty_url'))
             return null
           }
           return await window.api.file.download(url)
@@ -211,10 +253,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
             error instanceof Error &&
             (error.message.includes('Failed to parse URL') || error.message.includes('Invalid URL'))
           ) {
-            window.message.warning({
-              content: t('message.empty_url'),
-              key: 'empty-url-warning'
-            })
+            window.toast.warning(t('message.empty_url'))
           }
           return null
         }
@@ -263,8 +302,14 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${AI.getApiKey()}`
     }
-    const url = newApiProvider.apiHost + `/v1/images/generations`
-    const editUrl = newApiProvider.apiHost + `/v1/images/edits`
+    // NOTE: Cherry Studio当下 newapi只接受v1/images/xxx的请求
+    // TODO: support gemini https://www.newapi.ai/zh/docs/api/ai-model/images/gemini/geminirelayv1beta-383837589
+    let url = newApiProvider.apiHost.replace(/\/v1$/, '') + `/v1/images/generations`
+    let editUrl = newApiProvider.apiHost.replace(/\/v1$/, '') + `/v1/images/edits`
+    if (newApiProvider.id === 'aionly') {
+      url = newApiProvider.apiHost.replace(/\/v1$/, '') + `/openai/v1/images/generations`
+      editUrl = newApiProvider.apiHost.replace(/\/v1$/, '') + `/openai/v1/images/edits`
+    }
 
     try {
       if (mode === 'openai_image_generate') {
@@ -283,7 +328,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       } else if (mode === 'openai_image_edit') {
         // -------- Edit Mode --------
         if (editImages.length === 0) {
-          window.message.warning({ content: t('paintings.image_file_required') })
+          window.toast.warning(t('paintings.image_file_required'))
           return
         }
 
@@ -323,7 +368,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error?.message || '生成图像失败')
+        throw new Error(errorData.error?.message || t('paintings.generate_failed'))
       }
 
       const data = await response.json()
@@ -343,7 +388,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
           })
         )
         await FileManager.addFiles(validFiles)
-        updatePaintingState({ files: validFiles, urls: validFiles.map((file) => file.name) })
+        updatePaintingState({ files: validFiles, urls: [] })
       }
     } catch (error: unknown) {
       handleError(error)
@@ -397,7 +442,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       }
     }
 
-    removePainting(mode, paintingToDelete)
+    void removePainting(mode, paintingToDelete)
   }
 
   const translate = async () => {
@@ -435,7 +480,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       if (spaceClickCount === 2) {
         setSpaceClickCount(0)
         setIsTranslating(true)
-        translate()
+        void translate()
       }
     }
   }
@@ -449,12 +494,35 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
   // 处理模式切换
   const handleModeChange = (value: string) => {
-    setMode(value as keyof PaintingsState)
-    if (newApiPaintings[value as keyof PaintingsState] && newApiPaintings[value as keyof PaintingsState].length > 0) {
-      setPainting(newApiPaintings[value as keyof PaintingsState][0])
-    } else {
-      setPainting(DEFAULT_PAINTING)
+    const nextMode = value as keyof PaintingsState
+
+    setMode(nextMode)
+
+    if (nextMode === 'openai_image_edit' && mode === 'openai_image_generate' && painting.files.length > 0) {
+      const existingEditPainting = findPaintingByFiles(
+        newApiPaintings.openai_image_edit || [],
+        newApiProvider.id,
+        painting.files
+      )
+
+      if (existingEditPainting) {
+        setPainting(existingEditPainting)
+        return
+      }
+
+      const seededPainting = {
+        ...painting,
+        id: uuid(),
+        providerId: newApiProvider.id
+      }
+
+      addPainting(nextMode, seededPainting)
+      setPainting(seededPainting)
+      return
     }
+
+    const list = (newApiPaintings[nextMode] || []).filter((p) => p.providerId === newApiProvider.id)
+    setPainting(list[0] || { ...DEFAULT_PAINTING, providerId: newApiProvider.id })
   }
 
   // 渲染配置项的函数
@@ -479,8 +547,16 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       const newPainting = getNewPainting()
       addPainting(mode, newPainting)
       setPainting(newPainting)
+    } else {
+      // 如果当前 painting 存在于 filteredPaintings 中，则优先显示当前 painting
+      const found = filteredPaintings.find((p) => p.id === painting.id)
+      if (found) {
+        setPainting(found)
+      } else {
+        setPainting(filteredPaintings[0])
+      }
     }
-  }, [filteredPaintings, mode, addPainting, painting, getNewPainting])
+  }, [filteredPaintings, mode, addPainting, getNewPainting, painting.id])
 
   useEffect(() => {
     const timer = spaceClickTimer.current
@@ -490,6 +566,13 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       }
     }
   }, [])
+
+  // if painting.model is not set, set it to the first model in modelOptions
+  useEffect(() => {
+    if (!painting.model && modelOptions.length > 0) {
+      updatePaintingState({ model: modelOptions[0].value })
+    }
+  }, [modelOptions, painting.model, updatePaintingState])
 
   return (
     <Container>
@@ -507,7 +590,9 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
         <LeftContainer>
           <ProviderTitleContainer>
             <SettingTitle style={{ marginBottom: 5 }}>{t('common.provider')}</SettingTitle>
-            <SettingHelpLink target="_blank" href={'https://docs.newapi.pro/apps/cherry-studio/'}>
+            <SettingHelpLink
+              target="_blank"
+              href={PROVIDER_URLS[newApiProvider.id]?.websites?.docs || 'https://docs.newapi.pro/apps/cherry-studio/'}>
               {t('paintings.learn_more')}
               <ProviderLogo
                 shape="square"
@@ -518,19 +603,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
             </SettingHelpLink>
           </ProviderTitleContainer>
 
-          <Select
-            value={providerOptions.find((p) => p.value === 'new-api')?.value}
-            onChange={handleProviderChange}
-            style={{ width: '100%' }}>
-            {providerOptions.map((provider) => (
-              <Select.Option value={provider.value} key={provider.value}>
-                <SelectOptionContainer>
-                  <ProviderLogo shape="square" src={getProviderLogo(provider.value || '')} size={16} />
-                  {provider.label}
-                </SelectOptionContainer>
-              </Select.Option>
-            ))}
-          </Select>
+          <ProviderSelect provider={newApiProvider} options={Options} onChange={handleProviderChange} />
 
           {/* 当没有可用的 Image Generation 模型时，提示用户先去新增 */}
           {modelOptions.length === 0 && (
@@ -555,7 +628,31 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
                     maxCount={16}
                     showUploadList={true}
                     listType="picture"
-                    beforeUpload={handleImageUpload}>
+                    beforeUpload={handleImageUpload}
+                    fileList={editImageFiles.map((file, idx): UploadFile<any> => {
+                      const rcFile: RcFile = {
+                        ...file,
+                        uid: String(idx),
+                        lastModifiedDate: file.lastModified ? new Date(file.lastModified) : new Date()
+                      }
+                      return {
+                        uid: rcFile.uid,
+                        name: rcFile.name || `image_${idx + 1}.png`,
+                        status: 'done',
+                        url: URL.createObjectURL(file),
+                        originFileObj: rcFile,
+                        lastModifiedDate: rcFile.lastModifiedDate
+                      }
+                    })}
+                    onRemove={(file) => {
+                      setEditImageFiles((prev) =>
+                        prev.filter((f) => {
+                          const idx = prev.indexOf(f)
+                          return String(idx) !== file.uid
+                        })
+                      )
+                      return true
+                    }}>
                     <ImagePlaceholder>
                       <ImageSizeImage src={IcImageUp} theme={theme} />
                     </ImagePlaceholder>
@@ -798,20 +895,12 @@ const ProviderLogo = styled(Avatar)`
   border: 0.5px solid var(--color-border);
 `
 
-// 添加新的样式组件
 const ModeSegmentedContainer = styled.div`
   display: flex;
   justify-content: center;
   padding-top: 24px;
 `
 
-const SelectOptionContainer = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-`
-
-// 添加新的样式组件
 const ProviderTitleContainer = styled.div`
   display: flex;
   justify-content: space-between;

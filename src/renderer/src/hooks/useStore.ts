@@ -1,14 +1,29 @@
-import { useAppDispatch, useAppSelector } from '@renderer/store'
+/**
+ * @deprecated Scheduled for removal in v2.0.0
+ * --------------------------------------------------------------------------
+ * ⚠️ NOTICE: V2 DATA&UI REFACTORING (by 0xfullex)
+ * --------------------------------------------------------------------------
+ * STOP: Feature PRs affecting this file are currently BLOCKED.
+ * Only critical bug fixes are accepted during this migration phase.
+ *
+ * This file is being refactored to v2 standards.
+ * Any non-critical changes will conflict with the ongoing work.
+ *
+ * 🔗 Context & Status:
+ * - Contribution Hold: https://github.com/CherryHQ/cherry-studio/issues/10954
+ * - v2 Refactor PR   : https://github.com/CherryHQ/cherry-studio/pull/10162
+ * --------------------------------------------------------------------------
+ */
+import { CHERRYAI_PROVIDER } from '@renderer/config/providers'
+import store, { useAppDispatch, useAppSelector } from '@renderer/store'
 import {
   setAssistantsTabSortType,
   setShowAssistants,
   setShowTopics,
-  setShowWorkspace,
   toggleShowAssistants,
-  toggleShowTopics,
-  toggleShowWorkspace
+  toggleShowTopics
 } from '@renderer/store/settings'
-import { AssistantsSortType } from '@renderer/types'
+import type { AssistantsSortType } from '@renderer/types'
 
 export function useShowAssistants() {
   const showAssistants = useAppSelector((state) => state.settings.showAssistants)
@@ -42,13 +57,6 @@ export function useAssistantsTabSortType() {
   }
 }
 
-export function useShowWorkspace() {
-  const showWorkspace = useAppSelector((state) => state.settings.showWorkspace)
-  const dispatch = useAppDispatch()
-
-  return {
-    showWorkspace,
-    setShowWorkspace: (show: boolean) => dispatch(setShowWorkspace(show)),
-    toggleShowWorkspace: () => dispatch(toggleShowWorkspace())
-  }
+export function getStoreProviders() {
+  return store.getState().llm.providers.concat([CHERRYAI_PROVIDER])
 }

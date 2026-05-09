@@ -1,9 +1,9 @@
 import { HStack } from '@renderer/components/Layout'
 import { TopView } from '@renderer/components/TopView'
-import { useAgent } from '@renderer/hooks/useAgents'
 import { useAssistant } from '@renderer/hooks/useAssistant'
+import { useAssistantPreset } from '@renderer/hooks/useAssistantPresets'
 import { useSidebarIconShow } from '@renderer/hooks/useSidebarIcon'
-import { Assistant } from '@renderer/types'
+import type { Assistant } from '@renderer/types'
 import { Menu, Modal } from 'antd'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -37,15 +37,17 @@ interface Props extends AssistantSettingPopupShowParams {
 const AssistantSettingPopupContainer: React.FC<Props> = ({ resolve, tab, ...props }) => {
   const [open, setOpen] = useState(true)
   const { t } = useTranslation()
-  const [menu, setMenu] = useState<AssistantSettingPopupTab>(tab || 'prompt')
+  const [menu, setMenu] = useState<AssistantSettingPopupTab>(tab || 'model')
 
   const _useAssistant = useAssistant(props.assistant.id)
-  const _useAgent = useAgent(props.assistant.id)
+  const _useAgent = useAssistantPreset(props.assistant.id)
   const isAgent = props.assistant.type === 'agent'
 
-  const assistant = isAgent ? _useAgent.agent : _useAssistant.assistant
-  const updateAssistant = isAgent ? _useAgent.updateAgent : _useAssistant.updateAssistant
-  const updateAssistantSettings = isAgent ? _useAgent.updateAgentSettings : _useAssistant.updateAssistantSettings
+  const assistant = isAgent ? (_useAgent.preset ?? props.assistant) : _useAssistant.assistant
+  const updateAssistant = isAgent ? _useAgent.updateAssistantPreset : _useAssistant.updateAssistant
+  const updateAssistantSettings = isAgent
+    ? _useAgent.updateAssistantPresetSettings
+    : _useAssistant.updateAssistantSettings
 
   const showKnowledgeIcon = useSidebarIconShow('knowledge')
 
@@ -63,12 +65,12 @@ const AssistantSettingPopupContainer: React.FC<Props> = ({ resolve, tab, ...prop
 
   const items = [
     {
-      key: 'prompt',
-      label: t('assistants.settings.prompt')
-    },
-    {
       key: 'model',
       label: t('assistants.settings.model')
+    },
+    {
+      key: 'prompt',
+      label: t('assistants.settings.prompt')
     },
     showKnowledgeIcon && {
       key: 'knowledge_base',
@@ -94,7 +96,7 @@ const AssistantSettingPopupContainer: React.FC<Props> = ({ resolve, tab, ...prop
       onOk={onOk}
       onCancel={onCancel}
       afterClose={afterClose}
-      maskClosable={false}
+      maskClosable={menu !== 'prompt'}
       footer={null}
       title={assistant.name}
       transitionName="animation-move-down"
@@ -108,28 +110,28 @@ const AssistantSettingPopupContainer: React.FC<Props> = ({ resolve, tab, ...prop
           padding: 0
         }
       }}
-      width="min(800px, 70vw)"
+      width="min(900px, 70vw)"
       height="80vh"
       centered>
       <HStack>
         <LeftMenu>
           <StyledMenu
-            defaultSelectedKeys={[tab || 'prompt']}
+            defaultSelectedKeys={[tab || 'model']}
             mode="vertical"
             items={items}
             onSelect={({ key }) => setMenu(key as AssistantSettingPopupTab)}
           />
         </LeftMenu>
         <Settings>
-          {menu === 'prompt' && (
-            <AssistantPromptSettings
+          {menu === 'model' && (
+            <AssistantModelSettings
               assistant={assistant}
               updateAssistant={updateAssistant}
               updateAssistantSettings={updateAssistantSettings}
             />
           )}
-          {menu === 'model' && (
-            <AssistantModelSettings
+          {menu === 'prompt' && (
+            <AssistantPromptSettings
               assistant={assistant}
               updateAssistant={updateAssistant}
               updateAssistantSettings={updateAssistantSettings}

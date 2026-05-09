@@ -1,26 +1,47 @@
-import { createSlice, PayloadAction } from '@reduxjs/toolkit'
-import { isMac } from '@renderer/config/constant'
+/**
+ * @deprecated Scheduled for removal in v2.0.0
+ * --------------------------------------------------------------------------
+ * ⚠️ NOTICE: V2 DATA&UI REFACTORING (by 0xfullex)
+ * --------------------------------------------------------------------------
+ * STOP: Feature PRs affecting this file are currently BLOCKED.
+ * Only critical bug fixes are accepted during this migration phase.
+ *
+ * This file is being refactored to v2 standards.
+ * Any non-critical changes will conflict with the ongoing work.
+ *
+ * 🔗 Context & Status:
+ * - Contribution Hold: https://github.com/CherryHQ/cherry-studio/issues/10954
+ * - v2 Refactor PR   : https://github.com/CherryHQ/cherry-studio/pull/10162
+ * --------------------------------------------------------------------------
+ */
+import type { PayloadAction } from '@reduxjs/toolkit'
+import { createSlice } from '@reduxjs/toolkit'
+import { DEFAULT_STREAM_OPTIONS_INCLUDE_USAGE, isMac } from '@renderer/config/constant'
 import { TRANSLATE_PROMPT } from '@renderer/config/prompts'
 import { DEFAULT_SIDEBAR_ICONS } from '@renderer/config/sidebar'
-import {
+import type {
   ApiServerConfig,
   AssistantsSortType,
   CodeStyleVarious,
   LanguageVarious,
   MathEngine,
+  MinAppRegionFilter,
   OpenAIServiceTier,
-  OpenAISummaryText,
   PaintingProvider,
   S3Config,
   SidebarIcon,
-  ThemeMode,
   TranslateLanguageCode
 } from '@renderer/types'
-import { uuid } from '@renderer/utils'
-import { UpgradeChannel } from '@shared/config/constant'
-import { OpenAIVerbosity } from '@types'
+import { ThemeMode } from '@renderer/types'
+import type {
+  OpenAICompletionsStreamOptions,
+  OpenAIReasoningSummary,
+  OpenAIVerbosity
+} from '@renderer/types/aiCoreTypes'
+import { API_SERVER_DEFAULTS, UpgradeChannel } from '@shared/config/constant'
+import { v4 as uuid } from 'uuid'
 
-import { RemoteSyncState } from './backup'
+import type { RemoteSyncState } from './backup'
 
 export type SendMessageShortcut = 'Enter' | 'Shift+Enter' | 'Ctrl+Enter' | 'Command+Enter' | 'Alt+Enter'
 
@@ -33,6 +54,8 @@ export type AssistantIconType = 'model' | 'emoji' | 'none'
 
 export type UserTheme = {
   colorPrimary: string
+  userFontFamily: string
+  userCodeFontFamily: string
 }
 
 export interface SettingsState {
@@ -97,6 +120,7 @@ export interface SettingsState {
   codeCollapsible: boolean
   codeWrappable: boolean
   codeImageTools: boolean
+  codeFancyBlock: boolean
   mathEngine: MathEngine
   mathEnableSingleDollar: boolean
   messageStyle: 'plain' | 'bubble'
@@ -122,6 +146,9 @@ export interface SettingsState {
   enableTopicNaming: boolean
   customCss: string
   topicNamingPrompt: string
+  // 消息操作确认设置
+  confirmDeleteMessage: boolean
+  confirmRegenerateMessage: boolean
   // Sidebar icons
   sidebarIcons: {
     visible: SidebarIcon[]
@@ -152,6 +179,7 @@ export interface SettingsState {
   joplinUrl: string | null
   joplinExportReasoning: boolean
   defaultObsidianVault: string | null
+  /** This state is actaully default assistant preset */
   defaultAgent: string | null
   // 思源笔记配置
   siyuanApiUrl: string | null
@@ -164,6 +192,8 @@ export interface SettingsState {
   maxKeepAliveMinapps: number
   showOpenedMinappsInSidebar: boolean
   minappsOpenLinkExternal: boolean
+  /** Mini app region filter: 'auto' (detect from IP), 'CN', or 'Global' */
+  minAppRegion: MinAppRegionFilter
   // 隐私设置
   enableDataCollection: boolean
   enableSpellCheck: boolean
@@ -171,6 +201,8 @@ export interface SettingsState {
   enableQuickPanelTriggers: boolean
   // 硬件加速设置
   disableHardwareAcceleration: boolean
+  // 使用系统标题栏 (仅Linux)
+  useSystemTitleBar: boolean
   exportMenuOptions: {
     image: boolean
     markdown: boolean
@@ -186,10 +218,14 @@ export interface SettingsState {
   }
   // OpenAI
   openAI: {
-    summaryText: OpenAISummaryText
+    // TODO: it's a bad naming. rename it to reasoningSummary in v2.
+    summaryText: OpenAIReasoningSummary
     /** @deprecated 现在该设置迁移到Provider对象中 */
     serviceTier: OpenAIServiceTier
     verbosity: OpenAIVerbosity
+    streamOptions: {
+      includeUsage: OpenAICompletionsStreamOptions['include_usage']
+    }
   }
   // Notification
   notification: {
@@ -211,9 +247,7 @@ export interface SettingsState {
   navbarPosition: 'left' | 'top'
   // API Server
   apiServer: ApiServerConfig
-  showMessageOutline?: boolean
-  // Notes Related
-  showWorkspace: boolean
+  showMessageOutline: boolean
 }
 
 export type MultiModelMessageStyle = 'horizontal' | 'vertical' | 'fold' | 'grid'
@@ -240,7 +274,9 @@ export const initialState: SettingsState = {
   tray: true,
   theme: ThemeMode.system,
   userTheme: {
-    colorPrimary: '#00b96b'
+    colorPrimary: '#00b96b',
+    userFontFamily: '',
+    userCodeFontFamily: ''
   },
   windowStyle: isMac ? 'transparent' : 'opaque',
   fontSize: 14,
@@ -281,6 +317,7 @@ export const initialState: SettingsState = {
   codeCollapsible: false,
   codeWrappable: true,
   codeImageTools: false,
+  codeFancyBlock: true,
   mathEngine: 'KaTeX',
   mathEnableSingleDollar: true,
   messageStyle: 'plain',
@@ -342,12 +379,18 @@ export const initialState: SettingsState = {
   maxKeepAliveMinapps: 3,
   showOpenedMinappsInSidebar: true,
   minappsOpenLinkExternal: false,
+  minAppRegion: 'auto',
   enableDataCollection: false,
   enableSpellCheck: false,
   spellCheckLanguages: [],
   enableQuickPanelTriggers: false,
+  // 消息操作确认设置
+  confirmDeleteMessage: true,
+  confirmRegenerateMessage: true,
   // 硬件加速设置
   disableHardwareAcceleration: false,
+  // 使用系统标题栏 (仅Linux)
+  useSystemTitleBar: false,
   exportMenuOptions: {
     image: true,
     markdown: true,
@@ -363,9 +406,12 @@ export const initialState: SettingsState = {
   },
   // OpenAI
   openAI: {
-    summaryText: 'off',
+    summaryText: 'auto',
     serviceTier: 'auto',
-    verbosity: 'medium'
+    verbosity: undefined,
+    streamOptions: {
+      includeUsage: DEFAULT_STREAM_OPTIONS_INCLUDE_USAGE
+    }
   },
   notification: {
     assistant: false,
@@ -378,7 +424,7 @@ export const initialState: SettingsState = {
   localBackupSyncInterval: 0,
   localBackupMaxBackups: 0,
   localBackupSkipBackupFile: false,
-  defaultPaintingProvider: 'zhipu',
+  defaultPaintingProvider: 'cherryin',
   s3: {
     endpoint: '',
     region: '',
@@ -399,13 +445,11 @@ export const initialState: SettingsState = {
   // API Server
   apiServer: {
     enabled: false,
-    host: 'localhost',
-    port: 23333,
+    host: API_SERVER_DEFAULTS.HOST,
+    port: API_SERVER_DEFAULTS.PORT,
     apiKey: `cs-sk-${uuid()}`
   },
-  showMessageOutline: undefined,
-  // Notes Related
-  showWorkspace: true
+  showMessageOutline: false
 }
 
 const settingsSlice = createSlice({
@@ -609,6 +653,9 @@ const settingsSlice = createSlice({
     setCodeImageTools: (state, action: PayloadAction<boolean>) => {
       state.codeImageTools = action.payload
     },
+    setCodeFancyBlock: (state, action: PayloadAction<boolean>) => {
+      state.codeFancyBlock = action.payload
+    },
     setMathEngine: (state, action: PayloadAction<MathEngine>) => {
       state.mathEngine = action.payload
     },
@@ -755,6 +802,9 @@ const settingsSlice = createSlice({
     setMinappsOpenLinkExternal: (state, action: PayloadAction<boolean>) => {
       state.minappsOpenLinkExternal = action.payload
     },
+    setMinAppRegion: (state, action: PayloadAction<MinAppRegionFilter>) => {
+      state.minAppRegion = action.payload
+    },
     setEnableDataCollection: (state, action: PayloadAction<boolean>) => {
       state.enableDataCollection = action.payload
     },
@@ -770,14 +820,29 @@ const settingsSlice = createSlice({
     setEnableQuickPanelTriggers: (state, action: PayloadAction<boolean>) => {
       state.enableQuickPanelTriggers = action.payload
     },
+    setConfirmDeleteMessage: (state, action: PayloadAction<boolean>) => {
+      state.confirmDeleteMessage = action.payload
+    },
+    setConfirmRegenerateMessage: (state, action: PayloadAction<boolean>) => {
+      state.confirmRegenerateMessage = action.payload
+    },
     setDisableHardwareAcceleration: (state, action: PayloadAction<boolean>) => {
       state.disableHardwareAcceleration = action.payload
     },
-    setOpenAISummaryText: (state, action: PayloadAction<OpenAISummaryText>) => {
+    setUseSystemTitleBar: (state, action: PayloadAction<boolean>) => {
+      state.useSystemTitleBar = action.payload
+    },
+    setOpenAISummaryText: (state, action: PayloadAction<OpenAIReasoningSummary>) => {
       state.openAI.summaryText = action.payload
     },
     setOpenAIVerbosity: (state, action: PayloadAction<OpenAIVerbosity>) => {
       state.openAI.verbosity = action.payload
+    },
+    setOpenAIStreamOptionsIncludeUsage: (
+      state,
+      action: PayloadAction<OpenAICompletionsStreamOptions['include_usage']>
+    ) => {
+      state.openAI.streamOptions.includeUsage = action.payload
     },
     setNotificationSettings: (state, action: PayloadAction<SettingsState['notification']>) => {
       state.notification = action.payload
@@ -834,12 +899,6 @@ const settingsSlice = createSlice({
     },
     setShowMessageOutline: (state, action: PayloadAction<boolean>) => {
       state.showMessageOutline = action.payload
-    },
-    setShowWorkspace: (state, action: PayloadAction<boolean>) => {
-      state.showWorkspace = action.payload
-    },
-    toggleShowWorkspace: (state) => {
-      state.showWorkspace = !state.showWorkspace
     }
   }
 })
@@ -898,6 +957,7 @@ export const {
   setCodeCollapsible,
   setCodeWrappable,
   setCodeImageTools,
+  setCodeFancyBlock,
   setMathEngine,
   setMathEnableSingleDollar,
   setFoldDisplayMode,
@@ -944,14 +1004,19 @@ export const {
   setMaxKeepAliveMinapps,
   setShowOpenedMinappsInSidebar,
   setMinappsOpenLinkExternal,
+  setMinAppRegion,
   setEnableDataCollection,
   setEnableSpellCheck,
   setSpellCheckLanguages,
   setExportMenuOptions,
   setEnableQuickPanelTriggers,
+  setConfirmDeleteMessage,
+  setConfirmRegenerateMessage,
   setDisableHardwareAcceleration,
+  setUseSystemTitleBar,
   setOpenAISummaryText,
   setOpenAIVerbosity,
+  setOpenAIStreamOptionsIncludeUsage,
   setNotificationSettings,
   // Local backup settings
   setLocalBackupDir,
@@ -968,9 +1033,7 @@ export const {
   // API Server actions
   setApiServerEnabled,
   setApiServerPort,
-  setApiServerApiKey,
-  setShowWorkspace,
-  toggleShowWorkspace
+  setApiServerApiKey
 } = settingsSlice.actions
 
 export default settingsSlice.reducer

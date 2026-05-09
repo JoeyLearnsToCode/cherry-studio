@@ -1,6 +1,6 @@
 import { loggerService } from '@logger'
 import { getModel } from '@renderer/hooks/useModel'
-import { AssistantMessage } from '@renderer/types'
+import type { AssistantMessage } from '@renderer/types'
 import {
   FactRetrievalSchema,
   getFactRetrievalMessages,
@@ -8,7 +8,7 @@ import {
   MemoryUpdateSchema,
   updateMemorySystemPrompt
 } from '@renderer/utils/memory-prompts'
-import { MemoryConfig, MemoryItem } from '@types'
+import type { MemoryConfig, MemoryItem } from '@types'
 import jaison from 'jaison/lib/index.js'
 
 import { fetchGenerate } from './ApiService'
@@ -40,7 +40,7 @@ export class MemoryProcessor {
     try {
       const { memoryConfig } = config
 
-      if (!memoryConfig.llmApiClient) {
+      if (!memoryConfig.llmModel) {
         throw new Error('No LLM model configured for memory processing')
       }
 
@@ -53,8 +53,9 @@ export class MemoryProcessor {
       const responseContent = await fetchGenerate({
         prompt: systemPrompt,
         content: userPrompt,
-        model: getModel(memoryConfig.llmApiClient.model, memoryConfig.llmApiClient.provider)
+        model: getModel(memoryConfig.llmModel.id, memoryConfig.llmModel.provider)
       })
+
       if (!responseContent || responseContent.trim() === '') {
         return []
       }
@@ -100,11 +101,11 @@ export class MemoryProcessor {
 
     const { memoryConfig, assistantId, userId, lastMessageId } = config
 
-    if (!memoryConfig.llmApiClient) {
+    if (!memoryConfig.llmModel) {
       throw new Error('No LLM model configured for memory processing')
     }
 
-    const existingMemoriesResult = window.keyv.get(`memory-search-${lastMessageId}`) as MemoryItem[] | []
+    const existingMemoriesResult = (window.keyv.get(`memory-search-${lastMessageId}`) as MemoryItem[]) || []
 
     const existingMemories = existingMemoriesResult.map((memory) => ({
       id: memory.id,
@@ -124,7 +125,7 @@ export class MemoryProcessor {
       const responseContent = await fetchGenerate({
         prompt: updateMemorySystemPrompt,
         content: updateMemoryUserPrompt,
-        model: getModel(memoryConfig.llmApiClient.model, memoryConfig.llmApiClient.provider)
+        model: getModel(memoryConfig.llmModel.id, memoryConfig.llmModel.provider)
       })
       if (!responseContent || responseContent.trim() === '') {
         return []

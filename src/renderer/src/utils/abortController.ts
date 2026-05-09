@@ -44,8 +44,30 @@ export function createAbortPromise<T>(signal: AbortSignal, finallyPromise: Promi
 
     signal.addEventListener('abort', abortHandler, { once: true })
 
-    finallyPromise.finally(() => {
+    void finallyPromise.finally(() => {
       signal.removeEventListener('abort', abortHandler)
     })
   })
+}
+
+/**
+ * 创建一个新的 AbortController 并将其注册到全局的 abort 映射中
+ * @param key - 用于标识此 AbortController 的唯一键值
+ * @returns AbortSignal - 返回 AbortController 的信号
+ * @example
+ * ```typescript
+ * const signal = readyToAbort('uniqueKey');
+ * fetch('https://api.example.com/data', { signal })
+ *   .then(response => response.json())
+ *   .catch(error => {
+ *     if (error.name === 'AbortError') {
+ *       console.log('Fetch aborted');
+ *     }
+ *   });
+ * ```
+ */
+export function readyToAbort(key: string) {
+  const controller = new AbortController()
+  addAbortController(key, () => controller.abort())
+  return controller.signal
 }

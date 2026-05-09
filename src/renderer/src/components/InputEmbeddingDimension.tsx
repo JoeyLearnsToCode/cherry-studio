@@ -1,12 +1,14 @@
 import { loggerService } from '@logger'
-import AiProvider from '@renderer/aiCore'
 import { RefreshIcon } from '@renderer/components/Icons'
 import { useProvider } from '@renderer/hooks/useProvider'
-import { Model } from '@renderer/types'
+import type { Model } from '@renderer/types'
 import { getErrorMessage } from '@renderer/utils'
 import { Button, InputNumber, Space, Tooltip } from 'antd'
 import { memo, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { AiProvider } from '../aiCore'
+import { getRotatedApiKey } from '../services/ApiService'
 
 const logger = loggerService.withContext('DimensionsInput')
 
@@ -35,19 +37,23 @@ const InputEmbeddingDimension = ({
   const handleFetchDimension = useCallback(async () => {
     if (!model) {
       logger.warn('Failed to get embedding dimensions: no model')
-      window.message.error(t('knowledge.embedding_model_required'))
+      window.toast.error(t('knowledge.embedding_model_required'))
       return
     }
 
     if (!provider) {
       logger.warn('Failed to get embedding dimensions: no provider')
-      window.message.error(t('knowledge.provider_not_found'))
+      window.toast.error(t('knowledge.provider_not_found'))
       return
     }
 
     setLoading(true)
     try {
-      const aiProvider = new AiProvider(provider)
+      const providerWithRotatedKey = {
+        ...provider,
+        apiKey: getRotatedApiKey(provider)
+      }
+      const aiProvider = new AiProvider(providerWithRotatedKey)
       const dimension = await aiProvider.getEmbeddingDimensions(model)
       // for controlled input
       if (ref?.current) {
@@ -56,7 +62,7 @@ const InputEmbeddingDimension = ({
       onChange?.(dimension)
     } catch (error) {
       logger.error(t('message.error.get_embedding_dimensions'), error as Error)
-      window.message.error(t('message.error.get_embedding_dimensions') + '\n' + getErrorMessage(error))
+      window.toast.error(t('message.error.get_embedding_dimensions') + '\n' + getErrorMessage(error))
     } finally {
       setLoading(false)
     }
@@ -76,7 +82,7 @@ const InputEmbeddingDimension = ({
       <Tooltip title={t('knowledge.dimensions_auto_set')}>
         <Button
           role="button"
-          aria-label="Get embedding dimension"
+          aria-label={t('common.get_embedding_dimension')}
           disabled={disabled || loading}
           onClick={handleFetchDimension}
           icon={<RefreshIcon size={16} className={loading ? 'animation-rotate' : ''} />}

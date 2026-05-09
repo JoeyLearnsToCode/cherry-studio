@@ -1,7 +1,7 @@
 import { loggerService } from '@logger'
 import { createSelector } from '@reduxjs/toolkit'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
-import { appendTrace, pauseTrace, restartTrace } from '@renderer/services/SpanManagerService'
+import { appendMessageTrace, appendTrace, pauseTrace, restartTrace } from '@renderer/services/SpanManagerService'
 import { estimateUserPromptUsage } from '@renderer/services/TokenService'
 import store, { type RootState, useAppDispatch, useAppSelector } from '@renderer/store'
 import { updateOneBlock } from '@renderer/store/messageBlock'
@@ -23,12 +23,12 @@ import {
   updateMessageAndBlocksThunk,
   updateTranslationBlockThunk
 } from '@renderer/store/thunk/messageThunk'
-import type { Assistant, Model, Topic, TranslateLanguageCode } from '@renderer/types'
+import { type Assistant, type Model, objectKeys, type Topic, type TranslateLanguageCode } from '@renderer/types'
 import type { Message, MessageBlock, MessageVersion } from '@renderer/types/newMessage'
 import { MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import { abortCompletion } from '@renderer/utils/abortController'
 import { getMainTextContent } from '@renderer/utils/messageUtils/find'
-import { throttle } from 'lodash'
+import { difference, throttle } from 'lodash'
 import { useCallback } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -61,7 +61,7 @@ export function useMessageOperations(topic: Topic) {
   const deleteMessage = useCallback(
     async (id: string, traceId?: string, modelName?: string) => {
       await dispatch(deleteSingleMessageThunk(topic.id, id))
-      window.api.trace.cleanHistory(topic.id, traceId || '', modelName)
+      void window.api.trace.cleanHistory(topic.id, traceId || '', modelName)
     },
     [dispatch, topic.id]
   )
@@ -87,10 +87,12 @@ export function useMessageOperations(topic: Topic) {
         logger.error('[editMessage] Topic prop is not valid.')
         return
       }
-
+      const uiStates = ['multiModelMessageStyle', 'foldSelected'] as const satisfies (keyof Message)[]
+      const extraUpdate = difference(objectKeys(updates), uiStates)
+      const isUiUpdateOnly = extraUpdate.length === 0
       const messageUpdates: Partial<Message> & Pick<Message, 'id'> = {
         id: messageId,
-        updatedAt: new Date().toISOString(),
+        updatedAt: isUiUpdateOnly ? undefined : new Date().toISOString(),
         ...updates
       }
 
@@ -128,7 +130,7 @@ export function useMessageOperations(topic: Topic) {
    * 发出事件以表示创建新上下文（清空消息 UI）。 / Emits an event to signal creating a new context (clearing messages UI).
    */
   const createNewContext = useCallback(async () => {
-    EventEmitter.emit(EVENT_NAMES.NEW_CONTEXT)
+    void EventEmitter.emit(EVENT_NAMES.NEW_CONTEXT)
   }, [])
 
   const displayCount = useAppSelector(selectNewDisplayCount)
@@ -147,7 +149,7 @@ export function useMessageOperations(topic: Topic) {
     for (const askId of askIds) {
       abortCompletion(askId)
     }
-    pauseTrace(topic.id)
+    void pauseTrace(topic.id)
     dispatch(newMessagesActions.setTopicLoading({ topicId: topic.id, loading: false }))
   }, [topic.id, dispatch])
 
@@ -209,13 +211,15 @@ export function useMessageOperations(topic: Topic) {
    */
   const appendAssistantResponse = useCallback(
     async (existingAssistantMessage: Message, newModel: Model, assistant: Assistant) => {
-      await appendTrace(existingAssistantMessage, newModel)
+      await appendMessageTrace(existingAssistantMessage, newModel)
       if (existingAssistantMessage.role !== 'assistant') {
         logger.error('appendAssistantResponse should only be called for an existing assistant message.')
         return
       }
       if (!existingAssistantMessage.askId) {
-        logger.warn('appendAssistantResponse: The existing assistant message is missing its askId. Falling back to includeLastAssistantInContext mode.')
+        logger.warn(
+          'appendAssistantResponse: The existing assistant message is missing its askId. Falling back to includeLastAssistantInContext mode.'
+        )
       }
       await dispatch(
         appendAssistantResponseThunk(
@@ -236,20 +240,12 @@ export function useMessageOperations(topic: Topic) {
    */
   const respondToUserMessage = useCallback(
     async (userMessage: Message, newModel: Model, assistant: Assistant) => {
-      await appendTrace(userMessage, newModel)
+      await appendTrace({ topicId: userMessage.topicId, traceId: userMessage.id, model: newModel })
       if (userMessage.role !== 'user') {
         logger.error('respondToUserMessage should only be called for a user message.')
         return
       }
-      await dispatch(
-        respondToUserMessageThunk(
-          topic.id,
-          userMessage.id,
-          newModel,
-          assistant,
-          userMessage.traceId
-        )
-      )
+      await dispatch(respondToUserMessageThunk(topic.id, userMessage.id, newModel, assistant, userMessage.traceId))
     },
     [dispatch, topic.id]
   )
@@ -316,7 +312,7 @@ export function useMessageOperations(topic: Topic) {
 
       return throttle(
         (accumulatedText: string, isComplete: boolean = false) => {
-          dispatch(updateTranslationBlockThunk(blockId!, accumulatedText, isComplete))
+          void dispatch(updateTranslationBlockThunk(blockId, accumulatedText, isComplete))
         },
         200,
         { leading: true, trailing: true }
@@ -365,9 +361,9 @@ export function useMessageOperations(topic: Topic) {
 
         // 2. Get all original blocks
         const originalBlocks = message.blocks
-          ? (message.blocks
+          ? message.blocks
               .map((blockId) => state.messageBlocks.entities[blockId])
-              .filter((block) => block !== undefined) as MessageBlock[])
+              .filter((block) => block !== undefined)
           : []
 
         // 3. Create sets for efficient comparison
@@ -411,12 +407,13 @@ export function useMessageOperations(topic: Topic) {
             const existingVersions: MessageVersion[] = message.versions || []
 
             // 如果没有历史版本，先把当前内容存为第一个版本
-            const baseVersions = existingVersions.length === 0
-              ? [{ id: uuidv4(), content: originalContent, createdAt: message.createdAt }]
-              : existingVersions
+            const baseVersions =
+              existingVersions.length === 0
+                ? [{ id: uuidv4(), content: originalContent, createdAt: message.createdAt }]
+                : existingVersions
 
             // 匹配已有版本：内容相同（去除首尾空白）则切回该版本
-            const matchedIndex = baseVersions.findIndex(v => normalizeContent(v.content) === normalizedNew)
+            const matchedIndex = baseVersions.findIndex((v) => normalizeContent(v.content) === normalizedNew)
 
             if (matchedIndex !== -1) {
               // 切回已有版本：用新内容更新该版本（保持首尾空白一致），同步 block 内容
@@ -430,7 +427,7 @@ export function useMessageOperations(topic: Topic) {
               messageUpdates.activeVersionId = updatedVersions[matchedIndex].id
 
               // 同步 main_text block 内容为该版本内容
-              const mainTextBlockIdx = editedBlocks.findIndex(b => b.type === MessageBlockType.MAIN_TEXT)
+              const mainTextBlockIdx = editedBlocks.findIndex((b) => b.type === MessageBlockType.MAIN_TEXT)
               if (mainTextBlockIdx !== -1) {
                 const block = editedBlocks[mainTextBlockIdx]
                 if ('content' in block) {
@@ -509,9 +506,7 @@ export function useMessageOperations(topic: Topic) {
         usage
       }
 
-      await dispatch(
-        newMessagesActions.updateMessage({ topicId: topic.id, messageId: message.id, updates: messageUpdates })
-      )
+      dispatch(newMessagesActions.updateMessage({ topicId: topic.id, messageId: message.id, updates: messageUpdates }))
       // 对于message的修改会在下面的thunk中保存
       await dispatch(resendUserMessageWithEditThunk(topic.id, message, assistant))
     },

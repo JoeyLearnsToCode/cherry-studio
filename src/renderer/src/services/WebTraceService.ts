@@ -1,7 +1,8 @@
 import { loggerService } from '@logger'
 import { convertSpanToSpanEntity, FunctionSpanExporter, FunctionSpanProcessor } from '@mcp-trace/trace-core'
 import { WebTracer } from '@mcp-trace/trace-web'
-import { ReadableSpan } from '@opentelemetry/sdk-trace-base'
+import { trace } from '@opentelemetry/api'
+import type { ReadableSpan } from '@opentelemetry/sdk-trace-base'
 
 const logger = loggerService.withContext('WebTraceService')
 
@@ -19,10 +20,10 @@ class WebTraceService {
     const processor = new FunctionSpanProcessor(
       exporter,
       (span: ReadableSpan) => {
-        window.api.trace.saveEntity(convertSpanToSpanEntity(span))
+        void window.api.trace.saveEntity(convertSpanToSpanEntity(span))
       },
       (span: ReadableSpan) => {
-        window.api.trace.saveEntity(convertSpanToSpanEntity(span))
+        void window.api.trace.saveEntity(convertSpanToSpanEntity(span))
       }
     )
     WebTracer.init(
@@ -32,6 +33,10 @@ class WebTraceService {
       },
       processor
     )
+  }
+
+  getTracer() {
+    return trace.getTracer(TRACER_NAME, '1.0.0')
   }
 }
 

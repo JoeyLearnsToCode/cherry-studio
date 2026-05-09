@@ -1,4 +1,4 @@
-import z from 'zod'
+import * as z from 'zod'
 
 import { isBuiltinMCPServerName } from '.'
 
@@ -16,8 +16,20 @@ export type MCPConfigSample = z.infer<typeof MCPConfigSampleSchema>
  * 允许 inMemory 作为合法字段，需要额外校验 name 是否 builtin
  */
 export const McpServerTypeSchema = z
-  .union([z.literal('stdio'), z.literal('sse'), z.literal('streamableHttp'), z.literal('inMemory')])
-  .default('stdio') // 大多数情况下默认使用 stdio
+  .string()
+  .default('stdio')
+  .transform((type) => {
+    if (type.includes('http')) {
+      return 'streamableHttp'
+    } else {
+      return type
+    }
+  })
+  .pipe(z.union([z.literal('stdio'), z.literal('sse'), z.literal('streamableHttp'), z.literal('inMemory')])) // 大多数情况下默认使用 stdio
+
+export const MCPServerInstallSourceSchema = z.enum(['builtin', 'manual', 'protocol', 'unknown']).default('unknown')
+export type MCPServerInstallSource = z.infer<typeof MCPServerInstallSourceSchema>
+
 /**
  * 定义单个 MCP 服务器的配置。
  * FIXME: 为了兼容性，暂时允许用户编辑任意字段，这可能会导致问题。
@@ -111,7 +123,15 @@ export const McpServerConfigSchema = z
      * 请求超时时间
      * 可选。单位为秒，默认为60秒。
      */
-    timeout: z.number().optional().describe('Timeout in seconds for requests to this server'),
+    timeout: z
+      .preprocess((val) => {
+        if (typeof val === 'string' && val.trim() !== '') {
+          const parsed = Number(val)
+          return isNaN(parsed) ? val : parsed
+        }
+        return val
+      }, z.number().optional())
+      .describe('Timeout in seconds for requests to this server'),
     /**
      * DXT包版本号
      * 可选。用于标识DXT包的版本。
@@ -159,7 +179,11 @@ export const McpServerConfigSchema = z
      * 是否激活
      * 可选。用于标识服务器是否处于激活状态。
      */
-    isActive: z.boolean().optional().describe('Whether the server is active')
+    isActive: z.boolean().optional().describe('Whether the server is active'),
+    installSource: MCPServerInstallSourceSchema.optional().describe('Where the MCP server was installed from'),
+    isTrusted: z.boolean().optional().describe('Whether the MCP server has been trusted by user'),
+    trustedAt: z.number().optional().describe('Timestamp when the server was trusted'),
+    installedAt: z.number().optional().describe('Timestamp when the server was installed')
   })
   .strict()
   // 在这里定义额外的校验逻辑
@@ -174,6 +198,21 @@ export const McpServerConfigSchema = z
       message: 'Server type is inMemory but this is not a builtin MCP server, which is not allowed'
     }
   )
+  .transform((schema) => {
+    // 显式传入的type会覆盖掉从url推断的逻辑
+    if (!schema.type) {
+      const url = schema.baseUrl ?? schema.url ?? null
+      // NOTE: url 暗示了服务器的类型为 streamableHttp 或 sse，未来可能会扩展其他类型
+      if (url !== null) {
+        const type = getMcpServerType(url)
+        return {
+          ...schema,
+          type
+        } as const
+      }
+    }
+    return schema
+  })
 /**
  * 将服务器别名（字符串ID）映射到其配置的对象。
  * 例如: { "my-tools": { command: "...", args: [...] }, "github": { ... } }
@@ -224,4 +263,15 @@ export function safeValidateMcpConfig(config: unknown) {
  */
 export function safeValidateMcpServerConfig(config: unknown) {
   return McpServerConfigSchema.safeParse(config)
+}
+
+/**
+ * 根据给定的URL判断MCP服务器的类型。
+ * 如果URL以 "/mcp" 结尾，则类型为 "streamableHttp"，否则为 "sse"。
+ *
+ * @param url - 服务器的URL地址
+ * @returns MCP服务器类型（'streamableHttp' 或 'sse'）
+ */
+export function getMcpServerType(url: string): McpServerType {
+  return url.endsWith('/mcp') ? 'streamableHttp' : 'sse'
 }

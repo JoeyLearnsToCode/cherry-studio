@@ -1,25 +1,65 @@
 import { loggerService } from '@logger'
 import { isWin } from '@main/constant'
 import { getIpCountry } from '@main/utils/ipService'
-import { locales } from '@main/utils/locales'
 import { generateUserAgent } from '@main/utils/systemInfo'
-import { FeedUrl, UpgradeChannel } from '@shared/config/constant'
+import { APP_NAME, FeedUrl, UpdateConfigUrl, UpdateMirror, UpgradeChannel } from '@shared/config/constant'
 import { IpcChannel } from '@shared/IpcChannel'
-import { CancellationToken, UpdateInfo } from 'builder-util-runtime'
-import { app, BrowserWindow, dialog, net } from 'electron'
-import { AppUpdater as _AppUpdater, autoUpdater, Logger, NsisUpdater, UpdateCheckResult } from 'electron-updater'
+import type { UpdateInfo } from 'builder-util-runtime'
+import { CancellationToken } from 'builder-util-runtime'
+import { app, net } from 'electron'
+import type { AppUpdater as _AppUpdater, Logger, NsisUpdater, UpdateCheckResult } from 'electron-updater'
+import { autoUpdater } from 'electron-updater'
 import path from 'path'
 import semver from 'semver'
 
-import icon from '../../../build/icon.png?asset'
+import { analyticsService } from './AnalyticsService'
 import { configManager } from './ConfigManager'
 import { windowService } from './WindowService'
 
 const logger = loggerService.withContext('AppUpdater')
 
+function getCommonHeaders() {
+  return {
+    'User-Agent': generateUserAgent(),
+    'Cache-Control': 'no-cache',
+    'Client-Id': configManager.getClientId(),
+    'App-Name': APP_NAME,
+    'App-Version': `v${app.getVersion()}`,
+    OS: process.platform
+  }
+}
+
+// Language markers constants for multi-language release notes
+const LANG_MARKERS = {
+  EN_START: '<!--LANG:en-->',
+  ZH_CN_START: '<!--LANG:zh-CN-->',
+  END: '<!--LANG:END-->'
+}
+
+interface UpdateConfig {
+  lastUpdated: string
+  versions: {
+    [versionKey: string]: VersionConfig
+  }
+}
+
+interface VersionConfig {
+  minCompatibleVersion: string
+  description: string
+  channels: {
+    latest: ChannelConfig | null
+    rc: ChannelConfig | null
+    beta: ChannelConfig | null
+  }
+}
+
+interface ChannelConfig {
+  version: string
+  feedUrls: Record<UpdateMirror, string>
+}
+
 export default class AppUpdater {
   autoUpdater: _AppUpdater = autoUpdater
-  private releaseInfo: UpdateInfo | undefined
   private cancellationToken: CancellationToken = new CancellationToken()
   private updateCheckResult: UpdateCheckResult | null = null
 
@@ -27,20 +67,24 @@ export default class AppUpdater {
     autoUpdater.logger = logger as Logger
     autoUpdater.forceDevUpdateConfig = !app.isPackaged
     autoUpdater.autoDownload = configManager.getAutoUpdate()
-    autoUpdater.autoInstallOnAppQuit = configManager.getAutoUpdate()
+    // Never auto-install on quit - user must explicitly click "Install Now"
+    // Auto-install on quit can cause issues: unexpected updates on restart,
+    // corruption if system shuts down during install, or app uninstall on force shutdown
+    autoUpdater.autoInstallOnAppQuit = false
     autoUpdater.requestHeaders = {
       ...autoUpdater.requestHeaders,
-      'User-Agent': generateUserAgent()
+      ...getCommonHeaders()
     }
 
     autoUpdater.on('error', (error) => {
-      logger.error('update error', error as Error)
+      logger.error('update error', error)
       windowService.getMainWindow()?.webContents.send(IpcChannel.UpdateError, error)
     })
 
     autoUpdater.on('update-available', (releaseInfo: UpdateInfo) => {
       logger.info('update available', releaseInfo)
-      windowService.getMainWindow()?.webContents.send(IpcChannel.UpdateAvailable, releaseInfo)
+      const processedReleaseInfo = this.processReleaseInfo(releaseInfo)
+      windowService.getMainWindow()?.webContents.send(IpcChannel.UpdateAvailable, processedReleaseInfo)
     })
 
     // 检测到不需要更新时
@@ -55,9 +99,9 @@ export default class AppUpdater {
 
     // 当需要更新的内容下载完成后
     autoUpdater.on('update-downloaded', (releaseInfo: UpdateInfo) => {
-      windowService.getMainWindow()?.webContents.send(IpcChannel.UpdateDownloaded, releaseInfo)
-      this.releaseInfo = releaseInfo
-      logger.info('update downloaded', releaseInfo)
+      const processedReleaseInfo = this.processReleaseInfo(releaseInfo)
+      windowService.getMainWindow()?.webContents.send(IpcChannel.UpdateDownloaded, processedReleaseInfo)
+      logger.info('update downloaded', processedReleaseInfo)
     })
 
     if (isWin) {
@@ -67,64 +111,9 @@ export default class AppUpdater {
     this.autoUpdater = autoUpdater
   }
 
-  private async _getReleaseVersionFromGithub(channel: UpgradeChannel) {
-    const headers = {
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'Accept-Language': 'en-US,en;q=0.9'
-    }
-    try {
-      logger.info(`get release version from github: ${channel}`)
-      const responses = await net.fetch('https://api.github.com/repos/CherryHQ/cherry-studio/releases?per_page=8', {
-        headers
-      })
-      const data = (await responses.json()) as GithubReleaseInfo[]
-      let mightHaveLatest = false
-      const release: GithubReleaseInfo | undefined = data.find((item: GithubReleaseInfo) => {
-        if (!item.draft && !item.prerelease) {
-          mightHaveLatest = true
-        }
-
-        return item.prerelease && item.tag_name.includes(`-${channel}.`)
-      })
-
-      if (!release) {
-        return null
-      }
-
-      // if the release version is the same as the current version, return null
-      if (release.tag_name === app.getVersion()) {
-        return null
-      }
-
-      if (mightHaveLatest) {
-        logger.info(`might have latest release, get latest release`)
-        const latestReleaseResponse = await net.fetch(
-          'https://api.github.com/repos/CherryHQ/cherry-studio/releases/latest',
-          {
-            headers
-          }
-        )
-        const latestRelease = (await latestReleaseResponse.json()) as GithubReleaseInfo
-        if (semver.gt(latestRelease.tag_name, release.tag_name)) {
-          logger.info(
-            `latest release version is ${latestRelease.tag_name}, prerelease version is ${release.tag_name}, return null`
-          )
-          return null
-        }
-      }
-
-      logger.info(`release url is ${release.tag_name}, set channel to ${channel}`)
-      return `https://github.com/CherryHQ/cherry-studio/releases/download/${release.tag_name}`
-    } catch (error) {
-      logger.error('Failed to get latest not draft version from github:', error as Error)
-      return null
-    }
-  }
-
   public setAutoUpdate(isActive: boolean) {
     autoUpdater.autoDownload = isActive
-    autoUpdater.autoInstallOnAppQuit = isActive
+    // autoInstallOnAppQuit is always false - user must explicitly click "Install Now"
   }
 
   private _getChannelByVersion(version: string) {
@@ -153,6 +142,95 @@ export default class AppUpdater {
     return UpgradeChannel.LATEST
   }
 
+  /**
+   * Fetch update configuration from GitHub or GitCode based on mirror
+   * @param mirror - Mirror to fetch config from
+   * @returns UpdateConfig object or null if fetch fails
+   */
+  private async _fetchUpdateConfig(mirror: UpdateMirror): Promise<UpdateConfig | null> {
+    const configUrl = mirror === UpdateMirror.GITCODE ? UpdateConfigUrl.GITCODE : UpdateConfigUrl.GITHUB
+
+    try {
+      logger.info(`Fetching update config from ${configUrl} (mirror: ${mirror})`)
+      const response = await net.fetch(configUrl, {
+        headers: {
+          ...getCommonHeaders(),
+          Accept: 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const config = (await response.json()) as UpdateConfig
+      logger.info(`Update config fetched successfully, last updated: ${config.lastUpdated}`)
+      return config
+    } catch (error) {
+      logger.error('Failed to fetch update config:', error as Error)
+      return null
+    }
+  }
+
+  /**
+   * Find compatible channel configuration based on current version
+   * @param currentVersion - Current app version
+   * @param requestedChannel - Requested upgrade channel (latest/rc/beta)
+   * @param config - Update configuration object
+   * @returns Object containing ChannelConfig and actual channel if found, null otherwise
+   */
+  private _findCompatibleChannel(
+    currentVersion: string,
+    requestedChannel: UpgradeChannel,
+    config: UpdateConfig
+  ): { config: ChannelConfig; channel: UpgradeChannel } | null {
+    // Get all version keys and sort descending (newest first)
+    const versionKeys = Object.keys(config.versions).sort(semver.rcompare)
+
+    logger.info(
+      `Finding compatible channel for version ${currentVersion}, requested channel: ${requestedChannel}, available versions: ${versionKeys.join(', ')}`
+    )
+
+    for (const versionKey of versionKeys) {
+      const versionConfig = config.versions[versionKey]
+      const channelConfig = versionConfig.channels[requestedChannel]
+      const latestChannelConfig = versionConfig.channels[UpgradeChannel.LATEST]
+
+      if (!semver.gte(currentVersion, versionConfig.minCompatibleVersion)) {
+        continue
+      }
+
+      // Check version compatibility and channel availability
+      if (channelConfig !== null) {
+        logger.info(
+          `Found compatible version: ${versionKey} (minCompatibleVersion: ${versionConfig.minCompatibleVersion}), version: ${channelConfig.version}`
+        )
+
+        if (
+          requestedChannel !== UpgradeChannel.LATEST &&
+          latestChannelConfig &&
+          semver.gte(latestChannelConfig.version, channelConfig.version)
+        ) {
+          logger.info(
+            `latest channel version is greater than the requested channel version: ${latestChannelConfig.version} > ${channelConfig.version}, using latest instead`
+          )
+          return { config: latestChannelConfig, channel: UpgradeChannel.LATEST }
+        }
+
+        return { config: channelConfig, channel: requestedChannel }
+      } else if (requestedChannel !== UpgradeChannel.LATEST && latestChannelConfig !== null) {
+        // Fallback: requested channel (rc/beta) is null, but latest channel is available
+        logger.info(
+          `Requested channel ${requestedChannel} is null for ${versionKey}, falling back to latest channel: ${latestChannelConfig.version}`
+        )
+        return { config: latestChannelConfig, channel: UpgradeChannel.LATEST }
+      }
+    }
+
+    logger.warn(`No compatible channel found for version ${currentVersion} and channel ${requestedChannel}`)
+    return null
+  }
+
   private _setChannel(channel: UpgradeChannel, feedUrl: string) {
     this.autoUpdater.channel = channel
     this.autoUpdater.setFeedURL(feedUrl)
@@ -164,33 +242,42 @@ export default class AppUpdater {
   }
 
   private async _setFeedUrl() {
+    const currentVersion = app.getVersion()
     const testPlan = configManager.getTestPlan()
-    if (testPlan) {
-      const channel = this._getTestChannel()
+    const requestedChannel = testPlan ? this._getTestChannel() : UpgradeChannel.LATEST
 
-      if (channel === UpgradeChannel.LATEST) {
-        this._setChannel(UpgradeChannel.LATEST, FeedUrl.GITHUB_LATEST)
-        return
-      }
-
-      const releaseUrl = await this._getReleaseVersionFromGithub(channel)
-      if (releaseUrl) {
-        logger.info(`release url is ${releaseUrl}, set channel to ${channel}`)
-        this._setChannel(channel, releaseUrl)
-        return
-      }
-
-      // if no prerelease url, use github latest to get release
-      this._setChannel(UpgradeChannel.LATEST, FeedUrl.GITHUB_LATEST)
-      return
-    }
-
-    this._setChannel(UpgradeChannel.LATEST, FeedUrl.PRODUCTION)
+    // Determine mirror based on IP country
     const ipCountry = await getIpCountry()
-    logger.info(`ipCountry is ${ipCountry}, set channel to ${UpgradeChannel.LATEST}`)
-    if (ipCountry.toLowerCase() !== 'cn') {
-      this._setChannel(UpgradeChannel.LATEST, FeedUrl.GITHUB_LATEST)
+    const mirror = ipCountry.toLowerCase() === 'cn' ? UpdateMirror.GITCODE : UpdateMirror.GITHUB
+
+    logger.info(
+      `Setting feed URL for version ${currentVersion}, testPlan: ${testPlan}, requested channel: ${requestedChannel}, mirror: ${mirror} (IP country: ${ipCountry})`
+    )
+
+    // Try to fetch update config from remote
+    const config = await this._fetchUpdateConfig(mirror)
+
+    if (config) {
+      // Use new config-based system
+      const result = this._findCompatibleChannel(currentVersion, requestedChannel, config)
+
+      if (result) {
+        const { config: channelConfig, channel: actualChannel } = result
+        const feedUrl = channelConfig.feedUrls[mirror]
+        logger.info(
+          `Using config-based feed URL: ${feedUrl} for channel ${actualChannel} (requested: ${requestedChannel}, mirror: ${mirror})`
+        )
+        this._setChannel(actualChannel, feedUrl)
+        return
+      }
     }
+
+    logger.info('Failed to fetch update config, falling back to default feed URL')
+    // Fallback: use default feed URL based on mirror
+    const defaultFeedUrl = mirror === UpdateMirror.GITCODE ? FeedUrl.PRODUCTION : FeedUrl.GITHUB_LATEST
+
+    logger.info(`Using fallback feed URL: ${defaultFeedUrl}`)
+    this._setChannel(UpgradeChannel.LATEST, defaultFeedUrl)
   }
 
   public cancelDownload() {
@@ -202,6 +289,8 @@ export default class AppUpdater {
   }
 
   public async checkForUpdates() {
+    void analyticsService.trackAppUpdate()
+
     if (isWin && 'PORTABLE_EXECUTABLE_DIR' in process.env) {
       return {
         currentVersion: app.getVersion(),
@@ -221,7 +310,7 @@ export default class AppUpdater {
         // 如果 autoDownload 为 false，则需要再调用下面的函数触发下
         // do not use await, because it will block the return of this function
         logger.info('downloadUpdate manual by check for updates', this.cancellationToken)
-        this.autoUpdater.downloadUpdate(this.cancellationToken)
+        void this.autoUpdater.downloadUpdate(this.cancellationToken)
       }
 
       return {
@@ -237,57 +326,78 @@ export default class AppUpdater {
     }
   }
 
-  public async showUpdateDialog(mainWindow: BrowserWindow) {
-    if (!this.releaseInfo) {
-      return
-    }
-    const locale = locales[configManager.getLanguage()]
-    const { update: updateLocale } = locale.translation
-
-    let detail = this.formatReleaseNotes(this.releaseInfo.releaseNotes)
-    if (detail === '') {
-      detail = updateLocale.noReleaseNotes
-    }
-
-    dialog
-      .showMessageBox({
-        type: 'info',
-        title: updateLocale.title,
-        icon,
-        message: updateLocale.message.replace('{{version}}', this.releaseInfo.version),
-        detail,
-        buttons: [updateLocale.later, updateLocale.install],
-        defaultId: 1,
-        cancelId: 0
-      })
-      .then(({ response }) => {
-        if (response === 1) {
-          app.isQuitting = true
-          setImmediate(() => autoUpdater.quitAndInstall())
-        } else {
-          mainWindow.webContents.send(IpcChannel.UpdateDownloadedCancelled)
-        }
-      })
+  public quitAndInstall() {
+    app.isQuitting = true
+    setImmediate(() => autoUpdater.quitAndInstall(true, true))
   }
 
-  private formatReleaseNotes(releaseNotes: string | ReleaseNoteInfo[] | null | undefined): string {
-    if (!releaseNotes) {
-      return ''
-    }
+  /**
+   * Check if release notes contain multi-language markers
+   */
+  private hasMultiLanguageMarkers(releaseNotes: string): boolean {
+    return releaseNotes.includes(LANG_MARKERS.EN_START)
+  }
 
-    if (typeof releaseNotes === 'string') {
+  /**
+   * Parse multi-language release notes and return the appropriate language version
+   * @param releaseNotes - Release notes string with language markers
+   * @returns Parsed release notes for the user's language
+   *
+   * Expected format:
+   * <!--LANG:en-->English content<!--LANG:zh-CN-->Chinese content<!--LANG:END-->
+   */
+  private parseMultiLangReleaseNotes(releaseNotes: string): string {
+    try {
+      const language = configManager.getLanguage()
+      const isChineseUser = language === 'zh-CN' || language === 'zh-TW'
+
+      // Create regex patterns using constants
+      const enPattern = new RegExp(
+        `${LANG_MARKERS.EN_START.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)${LANG_MARKERS.ZH_CN_START.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`
+      )
+      const zhPattern = new RegExp(
+        `${LANG_MARKERS.ZH_CN_START.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)${LANG_MARKERS.END.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`
+      )
+
+      // Extract language sections
+      const enMatch = releaseNotes.match(enPattern)
+      const zhMatch = releaseNotes.match(zhPattern)
+
+      // Return appropriate language version with proper fallback
+      if (isChineseUser && zhMatch) {
+        return zhMatch[1].trim()
+      } else if (enMatch) {
+        return enMatch[1].trim()
+      } else {
+        // Clean fallback: remove all language markers
+        logger.warn('Failed to extract language-specific release notes, using cleaned fallback')
+        return releaseNotes
+          .replace(new RegExp(`${LANG_MARKERS.EN_START}|${LANG_MARKERS.ZH_CN_START}|${LANG_MARKERS.END}`, 'g'), '')
+          .trim()
+      }
+    } catch (error) {
+      logger.error('Failed to parse multi-language release notes', error as Error)
+      // Return original notes as safe fallback
       return releaseNotes
     }
-
-    return releaseNotes.map((note) => note.note).join('\n')
   }
-}
-interface GithubReleaseInfo {
-  draft: boolean
-  prerelease: boolean
-  tag_name: string
-}
-interface ReleaseNoteInfo {
-  readonly version: string
-  readonly note: string | null
+
+  /**
+   * Process release info to handle multi-language release notes
+   * @param releaseInfo - Original release info from updater
+   * @returns Processed release info with localized release notes
+   */
+  private processReleaseInfo(releaseInfo: UpdateInfo): UpdateInfo {
+    const processedInfo = { ...releaseInfo }
+
+    // Handle multi-language release notes in string format
+    if (releaseInfo.releaseNotes && typeof releaseInfo.releaseNotes === 'string') {
+      // Check if it contains multi-language markers
+      if (this.hasMultiLanguageMarkers(releaseInfo.releaseNotes)) {
+        processedInfo.releaseNotes = this.parseMultiLangReleaseNotes(releaseInfo.releaseNotes)
+      }
+    }
+
+    return processedInfo
+  }
 }

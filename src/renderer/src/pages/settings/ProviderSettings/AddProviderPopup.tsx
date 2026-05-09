@@ -1,13 +1,14 @@
 import { loggerService } from '@logger'
 import { Center, VStack } from '@renderer/components/Layout'
+import { ProviderAvatarPrimitive } from '@renderer/components/ProviderAvatar'
 import ProviderLogoPicker from '@renderer/components/ProviderLogoPicker'
 import { TopView } from '@renderer/components/TopView'
 import { PROVIDER_LOGO_MAP } from '@renderer/config/providers'
 import ImageStorage from '@renderer/services/ImageStorage'
-import { Provider, ProviderType } from '@renderer/types'
+import type { Provider, ProviderType } from '@renderer/types'
 import { compressImage, generateColorFromChar, getForegroundColor } from '@renderer/utils'
 import { Divider, Dropdown, Form, Input, Modal, Popover, Select, Upload } from 'antd'
-import { ItemType } from 'antd/es/menu/interface'
+import type { ItemType } from 'antd/es/menu/interface'
 import React, { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -23,6 +24,7 @@ const PopupContainer: React.FC<Props> = ({ provider, resolve }) => {
   const [open, setOpen] = useState(true)
   const [name, setName] = useState(provider?.name || '')
   const [type, setType] = useState<ProviderType>(provider?.type || 'openai')
+  const [displayType, setDisplayType] = useState<string>(provider?.type || 'openai')
   const [logo, setLogo] = useState<string | null>(null)
   const [logoPickerOpen, setLogoPickerOpen] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
@@ -41,7 +43,7 @@ const PopupContainer: React.FC<Props> = ({ provider, resolve }) => {
           logger.error('Failed to load logo', error as Error)
         }
       }
-      loadLogo()
+      void loadLogo()
     }
   }, [provider])
 
@@ -50,7 +52,7 @@ const PopupContainer: React.FC<Props> = ({ provider, resolve }) => {
 
     // 返回结果，但不包含文件对象，因为文件已经直接保存到 ImageStorage
     const result = {
-      name,
+      name: name.trim(),
       type,
       logo: logo || undefined
     }
@@ -63,10 +65,10 @@ const PopupContainer: React.FC<Props> = ({ provider, resolve }) => {
   }
 
   const onClose = () => {
-    resolve({ name, type, logo: logo || undefined })
+    resolve({ name: name.trim(), type, logo: logo || undefined })
   }
 
-  const buttonDisabled = name.length === 0
+  const buttonDisabled = name.trim().length === 0
 
   // 处理内置头像的点击事件
   const handleProviderLogoClick = async (providerId: string) => {
@@ -83,7 +85,7 @@ const PopupContainer: React.FC<Props> = ({ provider, resolve }) => {
 
       setLogoPickerOpen(false)
     } catch (error: any) {
-      window.message.error(error.message)
+      window.toast.error(error.message)
     }
   }
 
@@ -97,7 +99,7 @@ const PopupContainer: React.FC<Props> = ({ provider, resolve }) => {
 
       setDropdownOpen(false)
     } catch (error: any) {
-      window.message.error(error.message)
+      window.toast.error(error.message)
     }
   }
 
@@ -143,16 +145,16 @@ const PopupContainer: React.FC<Props> = ({ provider, resolve }) => {
                 })
                 setLogo(tempUrl)
               }
-
               setDropdownOpen(false)
             } catch (error: any) {
-              window.message.error(error.message)
+              window.toast.error(error.message)
             }
           }}>
           <MenuItem ref={uploadRef}>{t('settings.general.image_upload')}</MenuItem>
         </Upload>
       ),
-      onClick: () => {
+      onClick: (e: any) => {
+        e.stopPropagation()
         uploadRef.current?.click()
       }
     },
@@ -215,7 +217,9 @@ const PopupContainer: React.FC<Props> = ({ provider, resolve }) => {
               }}
               placement="bottom">
               {logo ? (
-                <ProviderLogo src={logo} />
+                <ProviderLogo>
+                  <ProviderAvatarPrimitive providerId={logo} providerName={name} logoSrc={logo} size={60} />
+                </ProviderLogo>
               ) : (
                 <ProviderInitialsLogo style={name ? { backgroundColor, color } : undefined}>
                   {getInitials()}
@@ -230,11 +234,11 @@ const PopupContainer: React.FC<Props> = ({ provider, resolve }) => {
         <Form.Item label={t('settings.provider.add.name.label')} style={{ marginBottom: 8 }}>
           <Input
             value={name}
-            onChange={(e) => setName(e.target.value.trim())}
+            onChange={(e) => setName(e.target.value)}
             placeholder={t('settings.provider.add.name.placeholder')}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                onOk()
+                void onOk()
               }
             }}
             maxLength={32}
@@ -242,14 +246,21 @@ const PopupContainer: React.FC<Props> = ({ provider, resolve }) => {
         </Form.Item>
         <Form.Item label={t('settings.provider.add.type')} style={{ marginBottom: 0 }}>
           <Select
-            value={type}
-            onChange={setType}
+            value={displayType}
+            onChange={(value: string) => {
+              setDisplayType(value)
+              // special case for cherryin-type, map to new-api internally
+              setType(value === 'cherryin-type' ? 'new-api' : (value as ProviderType))
+            }}
             options={[
               { label: 'OpenAI', value: 'openai' },
               { label: 'OpenAI-Response', value: 'openai-response' },
               { label: 'Gemini', value: 'gemini' },
               { label: 'Anthropic', value: 'anthropic' },
-              { label: 'Azure OpenAI', value: 'azure-openai' }
+              { label: 'Azure OpenAI', value: 'azure-openai' },
+              { label: 'New API', value: 'new-api' },
+              { label: 'CherryIN', value: 'cherryin-type' },
+              { label: 'Ollama', value: 'ollama' }
             ]}
           />
         </Form.Item>
@@ -258,16 +269,17 @@ const PopupContainer: React.FC<Props> = ({ provider, resolve }) => {
   )
 }
 
-const ProviderLogo = styled.img`
+const ProviderLogo = styled.div`
   cursor: pointer;
   width: 60px;
   height: 60px;
-  border-radius: 12px;
-  object-fit: contain;
+  border-radius: 100%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
   transition: opacity 0.3s ease;
-  background-color: var(--color-background-soft);
-  padding: 5px;
-  border: 0.5px solid var(--color-border);
   &:hover {
     opacity: 0.8;
   }
@@ -277,7 +289,7 @@ const ProviderInitialsLogo = styled.div`
   cursor: pointer;
   width: 60px;
   height: 60px;
-  border-radius: 12px;
+  border-radius: 100%;
   display: flex;
   align-items: center;
   justify-content: center;

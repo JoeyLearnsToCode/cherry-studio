@@ -6,13 +6,28 @@ import type { AppDispatch } from '@renderer/store'
 import { messageBlocksSlice } from '@renderer/store/messageBlock'
 import { messagesSlice } from '@renderer/store/newMessage'
 import type { Assistant, ExternalToolResult, MCPTool, Model } from '@renderer/types'
-import { WebSearchSource } from '@renderer/types'
+import { WEB_SEARCH_SOURCE } from '@renderer/types'
 import type { Chunk } from '@renderer/types/chunk'
 import { ChunkType } from '@renderer/types/chunk'
 import { AssistantMessageStatus, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
+import type * as errorUtils from '@renderer/utils/error'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { RootState } from '../../index'
+
+const { mockSavedFile } = vi.hoisted(() => ({
+  mockSavedFile: {
+    id: 'mock-image-id',
+    name: 'mock-image-id.png',
+    origin_name: 'mock-image-id.png',
+    path: '/mock/path/mock-image-id.png',
+    created_at: new Date().toISOString(),
+    size: 100,
+    ext: 'png',
+    type: 'image',
+    count: 1
+  }
+}))
 
 const createMockCallbacks = (
   mockAssistantMsgId: string,
@@ -41,67 +56,76 @@ const createMockCallbacks = (
   })
 
 // Mock external dependencies
-vi.mock('@renderer/config/models', () => ({
-  SYSTEM_MODELS: {
-    defaultModel: [{}, {}, {}],
-    silicon: [],
-    aihubmix: [],
-    ocoolai: [],
-    deepseek: [],
-    ppio: [],
-    alayanew: [],
-    qiniu: [],
-    dmxapi: [],
-    burncloud: [],
-    tokenflux: [],
-    '302ai': [],
-    cephalon: [],
-    lanyun: [],
-    ph8: [],
-    openrouter: [],
-    ollama: [],
-    'new-api': [],
-    lmstudio: [],
-    anthropic: [],
-    openai: [],
-    'azure-openai': [],
-    gemini: [],
-    vertexai: [],
-    github: [],
-    copilot: [],
-    zhipu: [],
-    yi: [],
-    moonshot: [],
-    baichuan: [],
-    dashscope: [],
-    stepfun: [],
-    doubao: [],
-    infini: [],
-    minimax: [],
-    groq: [],
-    together: [],
-    fireworks: [],
-    nvidia: [],
-    grok: [],
-    hyperbolic: [],
-    mistral: [],
-    jina: [],
-    perplexity: [],
-    modelscope: [],
-    xirang: [],
-    hunyuan: [],
-    'tencent-cloud-ti': [],
-    'baidu-cloud': [],
-    gpustack: [],
-    voyageai: []
-  },
-  getModelLogo: vi.fn(),
-  isVisionModel: vi.fn(() => false),
-  isFunctionCallingModel: vi.fn(() => false),
-  isEmbeddingModel: vi.fn(() => false),
-  isReasoningModel: vi.fn(() => false)
-  // ... 其他需要用到的函数也可以在这里 mock
-}))
+vi.mock('@renderer/config/models', async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>
+  return {
+    ...actual,
+    qwen3Model: {
+      id: 'qwen',
+      name: 'Qwen',
+      provider: 'cherryai',
+      group: 'Qwen'
+    },
+    SYSTEM_MODELS: {
+      defaultModel: [{}, {}, {}],
+      silicon: [],
+      aihubmix: [],
+      ocoolai: [],
+      deepseek: [],
+      ppio: [],
+      alayanew: [],
+      qiniu: [],
+      dmxapi: [],
+      burncloud: [],
+      tokenflux: [],
+      '302ai': [],
+      cephalon: [],
+      lanyun: [],
+      ph8: [],
+      openrouter: [],
+      ollama: [],
+      'new-api': [],
+      lmstudio: [],
+      anthropic: [],
+      openai: [],
+      'azure-openai': [],
+      gemini: [],
+      vertexai: [],
+      github: [],
+      copilot: [],
+      zhipu: [],
+      yi: [],
+      moonshot: [],
+      baichuan: [],
+      dashscope: [],
+      stepfun: [],
+      doubao: [],
+      infini: [],
+      minimax: [],
+      groq: [],
+      together: [],
+      fireworks: [],
+      nvidia: [],
+      grok: [],
+      hyperbolic: [],
+      mistral: [],
+      jina: [],
+      perplexity: [],
+      modelscope: [],
+      xirang: [],
+      hunyuan: [],
+      'tencent-cloud-ti': [],
+      'baidu-cloud': [],
+      gpustack: [],
+      voyageai: []
+    },
+    getModelLogo: vi.fn(),
+    isVisionModel: vi.fn(() => false),
+    isFunctionCallingModel: vi.fn(() => false),
+    isEmbeddingModel: vi.fn(() => false),
+    isReasoningModel: vi.fn(() => false)
+  }
+})
 
 vi.mock('@renderer/databases', () => ({
   default: {
@@ -147,7 +171,9 @@ vi.mock('@renderer/databases', () => ({
 
 vi.mock('@renderer/services/FileManager', () => ({
   default: {
-    deleteFile: vi.fn()
+    deleteFile: vi.fn(),
+    addFile: vi.fn().mockResolvedValue(mockSavedFile),
+    getFileUrl: vi.fn().mockReturnValue('file:///mock/path/mock-image-id.png')
   }
 }))
 
@@ -161,10 +187,12 @@ vi.mock('@renderer/services/NotificationService', () => ({
 
 vi.mock('@renderer/services/EventService', () => ({
   EventEmitter: {
-    emit: vi.fn()
+    emit: vi.fn(),
+    on: vi.fn()
   },
   EVENT_NAMES: {
-    MESSAGE_COMPLETE: 'MESSAGE_COMPLETE'
+    MESSAGE_COMPLETE: 'MESSAGE_COMPLETE',
+    SEND_MESSAGE: 'SEND_MESSAGE'
   }
 }))
 
@@ -239,14 +267,25 @@ vi.mock('i18next', () => {
   }
 })
 
-vi.mock('@renderer/utils/error', () => ({
-  formatErrorMessage: vi.fn((error) => error.message || 'Unknown error'),
-  isAbortError: vi.fn((error) => error.name === 'AbortError')
-}))
+vi.mock('@renderer/utils/error', async (importOriginal) => {
+  const actual = (await importOriginal()) as typeof errorUtils
+  return {
+    ...actual,
+    formatErrorMessage: vi.fn((error) => error.message || 'Unknown error'),
+    formatErrorMessageWithPrefix: vi.fn((error, prefix) => `${prefix}: ${error?.message || 'Unknown error'}`),
+    isAbortError: vi.fn((error) => error.name === 'AbortError'),
+    serializeError: vi.fn((error) => ({
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      cause: error.cause ? String(error.cause) : undefined
+    }))
+  }
+})
 
 vi.mock('@renderer/utils', () => ({
   default: {},
-  uuid: vi.fn(() => 'mock-uuid-' + Math.random().toString(36).substr(2, 9))
+  uuid: vi.fn(() => 'mock-uuid-' + Math.random().toString(36).slice(2, 11))
 }))
 
 interface MockTopicsState {
@@ -331,6 +370,15 @@ describe('streamCallback Integration Tests', () => {
     dispatch = store.dispatch
     getState = store.getState as () => ReturnType<typeof reducer> & RootState
 
+    Object.defineProperty(window, 'api', {
+      value: {
+        file: {
+          saveBase64Image: vi.fn().mockResolvedValue(mockSavedFile)
+        }
+      },
+      configurable: true
+    })
+
     // 为测试消息添加初始状态
     store.dispatch(
       messagesSlice.actions.addMessage({
@@ -404,7 +452,8 @@ describe('streamCallback Integration Tests', () => {
       { type: ChunkType.THINKING_START },
       { type: ChunkType.THINKING_DELTA, text: 'Let me think...', thinking_millsec: 1000 },
       { type: ChunkType.THINKING_DELTA, text: 'I need to consider...', thinking_millsec: 2000 },
-      { type: ChunkType.THINKING_COMPLETE, text: 'Final thoughts', thinking_millsec: 3000 },
+      { type: ChunkType.THINKING_DELTA, text: 'Final thoughts', thinking_millsec: 3000 },
+      { type: ChunkType.THINKING_COMPLETE, text: 'Final thoughts' },
       { type: ChunkType.BLOCK_COMPLETE }
     ]
 
@@ -418,7 +467,10 @@ describe('streamCallback Integration Tests', () => {
     expect(thinkingBlock).toBeDefined()
     expect(thinkingBlock?.content).toBe('Final thoughts')
     expect(thinkingBlock?.status).toBe(MessageBlockStatus.SUCCESS)
-    expect((thinkingBlock as any)?.thinking_millsec).toBe(3000)
+    // thinking_millsec 现在是本地计算的，只验证它存在且是一个合理的数字
+    expect((thinkingBlock as any)?.thinking_millsec).toBeDefined()
+    expect(typeof (thinkingBlock as any)?.thinking_millsec).toBe('number')
+    expect((thinkingBlock as any)?.thinking_millsec).toBeGreaterThanOrEqual(0)
   })
 
   it('should handle tool call flow', async () => {
@@ -434,7 +486,8 @@ describe('streamCallback Integration Tests', () => {
         type: 'object',
         title: 'Test Tool Input',
         properties: {}
-      }
+      },
+      type: 'mcp'
     }
 
     const chunks: Chunk[] = [
@@ -451,18 +504,18 @@ describe('streamCallback Integration Tests', () => {
           }
         ]
       },
-      {
-        type: ChunkType.MCP_TOOL_IN_PROGRESS,
-        responses: [
-          {
-            id: 'tool-call-1',
-            tool: mockTool,
-            arguments: { testArg: 'value' },
-            status: 'invoking' as const,
-            response: ''
-          }
-        ]
-      },
+      // {
+      //   type: ChunkType.MCP_TOOL_PENDING,
+      //   responses: [
+      //     {
+      //       id: 'tool-call-1',
+      //       tool: mockTool,
+      //       arguments: { testArg: 'value' },
+      //       status: 'invoking' as const,
+      //       response: ''
+      //     }
+      //   ]
+      // },
       {
         type: ChunkType.MCP_TOOL_COMPLETE,
         responses: [
@@ -525,9 +578,8 @@ describe('streamCallback Integration Tests', () => {
     const blocks = Object.values(state.messageBlocks.entities)
     const imageBlock = blocks.find((block) => block.type === MessageBlockType.IMAGE)
     expect(imageBlock).toBeDefined()
-    expect(imageBlock?.url).toBe(
-      'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAAQABADASIAAhEBAxEB/8QAFwAAAwEAAAAAAAAAAAAAAAAAAQMEB//EACMQAAIBAwMEAwAAAAAAAAAAAAECAwAEEQUSIQYxQVExUYH/xAAVAQEBAAAAAAAAAAAAAAAAAAAAAf/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AM/8A//Z'
-    )
+    expect(imageBlock?.file).toEqual(mockSavedFile)
+    expect(imageBlock?.url).toBe('file:///mock/path/mock-image-id.png')
     expect(imageBlock?.status).toBe(MessageBlockStatus.SUCCESS)
   })
 
@@ -535,7 +587,7 @@ describe('streamCallback Integration Tests', () => {
     const callbacks = createMockCallbacks(mockAssistantMsgId, mockTopicId, mockAssistant, dispatch, getState)
 
     const mockWebSearchResult = {
-      source: WebSearchSource.WEBSEARCH,
+      source: WEB_SEARCH_SOURCE.WEBSEARCH,
       results: [{ title: 'Test Result', url: 'http://example.com', snippet: 'Test snippet' }]
     }
 
@@ -570,7 +622,8 @@ describe('streamCallback Integration Tests', () => {
         type: 'object',
         title: 'Calculator Input',
         properties: {}
-      }
+      },
+      type: 'mcp'
     }
 
     const chunks: Chunk[] = [
@@ -603,18 +656,18 @@ describe('streamCallback Integration Tests', () => {
           }
         ]
       },
-      {
-        type: ChunkType.MCP_TOOL_IN_PROGRESS,
-        responses: [
-          {
-            id: 'tool-call-1',
-            tool: mockCalculatorTool,
-            arguments: { operation: 'add', a: 1, b: 2 },
-            status: 'invoking' as const,
-            response: ''
-          }
-        ]
-      },
+      // {
+      //   type: ChunkType.MCP_TOOL_PENDING,
+      //   responses: [
+      //     {
+      //       id: 'tool-call-1',
+      //       tool: mockCalculatorTool,
+      //       arguments: { operation: 'add', a: 1, b: 2 },
+      //       status: 'invoking' as const,
+      //       response: ''
+      //     }
+      //   ]
+      // },
       {
         type: ChunkType.MCP_TOOL_COMPLETE,
         responses: [
@@ -693,7 +746,7 @@ describe('streamCallback Integration Tests', () => {
 
     const mockExternalToolResult: ExternalToolResult = {
       webSearch: {
-        source: WebSearchSource.WEBSEARCH,
+        source: WEB_SEARCH_SOURCE.WEBSEARCH,
         results: [{ title: 'External Result', url: 'http://external.com', snippet: 'External snippet' }]
       },
       knowledge: [

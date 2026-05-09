@@ -1,38 +1,64 @@
-import { createSelector, createSlice, PayloadAction } from '@reduxjs/toolkit'
+/**
+ * @deprecated Scheduled for removal in v2.0.0
+ * --------------------------------------------------------------------------
+ * ⚠️ NOTICE: V2 DATA&UI REFACTORING (by 0xfullex)
+ * --------------------------------------------------------------------------
+ * STOP: Feature PRs affecting this file are currently BLOCKED.
+ * Only critical bug fixes are accepted during this migration phase.
+ *
+ * This file is being refactored to v2 standards.
+ * Any non-critical changes will conflict with the ongoing work.
+ *
+ * 🔗 Context & Status:
+ * - Contribution Hold: https://github.com/CherryHQ/cherry-studio/issues/10954
+ * - v2 Refactor PR   : https://github.com/CherryHQ/cherry-studio/pull/10162
+ * --------------------------------------------------------------------------
+ */
+// @ts-nocheck
+import type { PayloadAction } from '@reduxjs/toolkit'
+import { createSelector, createSlice } from '@reduxjs/toolkit'
 import { DEFAULT_CONTEXTCOUNT, DEFAULT_TEMPERATURE } from '@renderer/config/constant'
 import { TopicManager } from '@renderer/hooks/useTopic'
-import { getDefaultAssistant, getDefaultTopic } from '@renderer/services/AssistantService'
-import { Assistant, AssistantSettings, Model, Topic } from '@renderer/types'
+import { DEFAULT_ASSISTANT_SETTINGS, getDefaultAssistant, getDefaultTopic } from '@renderer/services/AssistantService'
+import type { Assistant, AssistantPreset, AssistantSettings, Model, Topic } from '@renderer/types'
 import { isEmpty, uniqBy } from 'lodash'
 
-import { RootState } from '.'
+import type { RootState } from '.'
 
 export interface AssistantsState {
   defaultAssistant: Assistant
   assistants: Assistant[]
   tagsOrder: string[]
   collapsedTags: Record<string, boolean>
+  presets: AssistantPreset[]
+  /** @deprecated should be removed in v2 */
+  unifiedListOrder: Array<{ type: 'agent' | 'assistant'; id: string }>
 }
 
 const initialState: AssistantsState = {
   defaultAssistant: getDefaultAssistant(),
   assistants: [getDefaultAssistant()],
   tagsOrder: [],
-  collapsedTags: {}
+  collapsedTags: {},
+  presets: [],
+  unifiedListOrder: []
 }
+
+const normalizeTopics = (topics: unknown): Topic[] => (Array.isArray(topics) ? topics : [])
 
 const assistantsSlice = createSlice({
   name: 'assistants',
   initialState,
   reducers: {
     updateDefaultAssistant: (state, action: PayloadAction<{ assistant: Assistant }>) => {
+      // @ts-ignore ts2589
       state.defaultAssistant = action.payload.assistant
     },
     updateAssistants: (state, action: PayloadAction<Assistant[]>) => {
       state.assistants = action.payload
     },
     addAssistant: (state, action: PayloadAction<Assistant>) => {
-      state.assistants.push(action.payload)
+      state.assistants.unshift(action.payload)
     },
     insertAssistant: (state, action: PayloadAction<{ index: number; assistant: Assistant }>) => {
       const { index, assistant } = action.payload
@@ -46,8 +72,10 @@ const assistantsSlice = createSlice({
     removeAssistant: (state, action: PayloadAction<{ id: string }>) => {
       state.assistants = state.assistants.filter((c) => c.id !== action.payload.id)
     },
-    updateAssistant: (state, action: PayloadAction<Assistant>) => {
-      state.assistants = state.assistants.map((c) => (c.id === action.payload.id ? action.payload : c))
+    updateAssistant: (state, action: PayloadAction<Partial<Assistant> & { id: string }>) => {
+      const { id, ...update } = action.payload
+      // @ts-ignore ts2589
+      state.assistants = state.assistants.map((c) => (c.id === id ? { ...c, ...update } : c))
     },
     updateAssistantSettings: (
       state,
@@ -91,6 +119,9 @@ const assistantsSlice = createSlice({
         [tag]: !prev[tag]
       }
     },
+    setUnifiedListOrder: (state, action: PayloadAction<Array<{ type: 'agent' | 'assistant'; id: string }>>) => {
+      state.unifiedListOrder = action.payload
+    },
     addTopic: (state, action: PayloadAction<{ assistantId: string; topic: Topic; insertAfterTopicId?: string }>) => {
       const topic = action.payload.topic
       topic.createdAt = topic.createdAt || new Date().toISOString()
@@ -109,7 +140,7 @@ const assistantsSlice = createSlice({
                     return uniqBy(newTopics, 'id')
                   }
                 }
-                return uniqBy([topic, ...assistant.topics], 'id')
+                return uniqBy([topic, ...normalizeTopics(assistant.topics)], 'id')
               })()
             }
           : assistant
@@ -120,7 +151,7 @@ const assistantsSlice = createSlice({
         assistant.id === action.payload.assistantId
           ? {
               ...assistant,
-              topics: assistant.topics.filter(({ id }) => id !== action.payload.topic.id)
+              topics: normalizeTopics(assistant.topics).filter(({ id }) => id !== action.payload.topic.id)
             }
           : assistant
       )
@@ -132,7 +163,7 @@ const assistantsSlice = createSlice({
         assistant.id === action.payload.assistantId
           ? {
               ...assistant,
-              topics: assistant.topics.map((topic) => {
+              topics: normalizeTopics(assistant.topics).map((topic) => {
                 const _topic = topic.id === newTopic.id ? newTopic : topic
                 _topic.messages = []
                 return _topic
@@ -156,7 +187,7 @@ const assistantsSlice = createSlice({
     removeAllTopics: (state, action: PayloadAction<{ assistantId: string }>) => {
       state.assistants = state.assistants.map((assistant) => {
         if (assistant.id === action.payload.assistantId) {
-          assistant.topics.forEach((topic) => TopicManager.removeTopic(topic.id))
+          normalizeTopics(assistant.topics).forEach((topic) => TopicManager.removeTopic(topic.id))
           return {
             ...assistant,
             topics: [getDefaultTopic(assistant.id)]
@@ -167,7 +198,7 @@ const assistantsSlice = createSlice({
     },
     updateTopicUpdatedAt: (state, action: PayloadAction<{ topicId: string }>) => {
       outer: for (const assistant of state.assistants) {
-        for (const topic of assistant.topics) {
+        for (const topic of normalizeTopics(assistant.topics)) {
           if (topic.id === action.payload.topicId) {
             topic.updatedAt = new Date().toISOString()
             break outer
@@ -184,6 +215,43 @@ const assistantsSlice = createSlice({
             }
           : assistant
       )
+    },
+    // Assistant Presets
+    setAssistantPresets: (state, action: PayloadAction<AssistantPreset[]>) => {
+      const presets = action.payload
+      state.presets = []
+      presets.forEach((p) => {
+        state.presets.push(p)
+      })
+    },
+    addAssistantPreset: (state, action: PayloadAction<AssistantPreset>) => {
+      state.presets.push(action.payload)
+    },
+    removeAssistantPreset: (state, action: PayloadAction<{ id: string }>) => {
+      state.presets = state.presets.filter((c) => c.id !== action.payload.id)
+    },
+    updateAssistantPreset: (state, action: PayloadAction<AssistantPreset>) => {
+      const preset = action.payload
+      const index = state.presets.findIndex((a) => a.id === preset.id)
+      if (index !== -1) {
+        state.presets[index] = preset
+      }
+    },
+    updateAssistantPresetSettings: (
+      state,
+      action: PayloadAction<{ assistantId: string; settings: Partial<AssistantSettings> }>
+    ) => {
+      for (const agent of state.presets) {
+        const settings = action.payload.settings
+        if (agent.id === action.payload.assistantId) {
+          for (const key in settings) {
+            if (!agent.settings) {
+              agent.settings = { ...DEFAULT_ASSISTANT_SETTINGS }
+            }
+            agent.settings[key] = settings[key]
+          }
+        }
+      }
     }
   }
 })
@@ -204,11 +272,17 @@ export const {
   setModel,
   setTagsOrder,
   updateAssistantSettings,
-  updateTagCollapse
+  updateTagCollapse,
+  setUnifiedListOrder,
+  setAssistantPresets,
+  addAssistantPreset,
+  removeAssistantPreset,
+  updateAssistantPreset,
+  updateAssistantPresetSettings
 } = assistantsSlice.actions
 
 export const selectAllTopics = createSelector([(state: RootState) => state.assistants.assistants], (assistants) =>
-  assistants.flatMap((assistant: Assistant) => assistant.topics)
+  assistants.flatMap((assistant: Assistant) => normalizeTopics(assistant.topics))
 )
 
 export const selectTopicsMap = createSelector([selectAllTopics], (topics) => {
