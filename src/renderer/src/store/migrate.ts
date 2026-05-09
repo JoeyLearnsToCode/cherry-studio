@@ -2321,6 +2321,14 @@ const migrateConfig = {
     } catch (error) {
       return state
     }
+  },
+  '144': (state: RootState) => {
+    try {
+      state.settings.gridPopoverTrigger = 'longPress'
+      return state
+    } catch (error) {
+      return state
+    }
   }
 }
 

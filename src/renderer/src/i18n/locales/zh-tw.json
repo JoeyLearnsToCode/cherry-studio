@@ -3359,6 +3359,7 @@
       "grid_popover_trigger": {
         "click": "點選顯示",
         "hover": "停留顯示",
+        "longPress": "長按顯示",
         "label": "網格詳細資訊觸發"
       },
       "input": {

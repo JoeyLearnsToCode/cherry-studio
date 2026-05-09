@@ -102,7 +102,7 @@ export interface SettingsState {
   messageStyle: 'plain' | 'bubble'
   foldDisplayMode: 'expanded' | 'compact'
   gridColumns: number
-  gridPopoverTrigger: 'hover' | 'click'
+  gridPopoverTrigger: 'hover' | 'click' | 'longPress'
   messageNavigation: 'none' | 'buttons' | 'anchor' | 'both'
   // 数据目录设置
   skipBackupFile: boolean
@@ -286,7 +286,7 @@ export const initialState: SettingsState = {
   messageStyle: 'plain',
   foldDisplayMode: 'expanded',
   gridColumns: 2,
-  gridPopoverTrigger: 'click',
+  gridPopoverTrigger: 'longPress',
   messageNavigation: 'none',
   skipBackupFile: false,
   webdavHost: '',
@@ -621,7 +621,7 @@ const settingsSlice = createSlice({
     setGridColumns: (state, action: PayloadAction<number>) => {
       state.gridColumns = action.payload
     },
-    setGridPopoverTrigger: (state, action: PayloadAction<'hover' | 'click'>) => {
+    setGridPopoverTrigger: (state, action: PayloadAction<'hover' | 'click' | 'longPress'>) => {
       state.gridPopoverTrigger = action.payload
     },
     setMessageStyle: (state, action: PayloadAction<'plain' | 'bubble'>) => {

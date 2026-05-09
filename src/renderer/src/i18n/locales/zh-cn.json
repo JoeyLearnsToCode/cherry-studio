@@ -3360,6 +3360,7 @@
       "grid_popover_trigger": {
         "click": "点击显示",
         "hover": "悬停显示",
+        "longPress": "长按显示",
         "label": "网格详情触发"
       },
       "input": {

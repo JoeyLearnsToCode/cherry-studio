@@ -65,12 +65,12 @@ const MessageGroupMenuBar: FC<Props> = ({
   }, [messages, topic.id])
 
   const onSwitchModel = useCallback(async () => {
-    const selectedMessage = messages.find((m) => m.id === selectMessageId) || messages[messages.length - 1]
-    if (!selectedMessage) return
-    const selectedModel = await SelectModelPopup.show({ model: selectedMessage.model, filter: mentionModelFilter })
+    const lastMessage = messages[messages.length - 1]
+    if (!lastMessage) return
+    const selectedModel = await SelectModelPopup.show({ model: lastMessage.model, filter: mentionModelFilter })
     if (!selectedModel) return
-    appendAssistantResponse(selectedMessage, selectedModel, { ...assistant, model: selectedModel })
-  }, [messages, selectMessageId, mentionModelFilter, appendAssistantResponse, assistant])
+    appendAssistantResponse(lastMessage, selectedModel, { ...assistant, model: selectedModel })
+  }, [messages, mentionModelFilter, appendAssistantResponse, assistant])
 
   const onRegenerateWithSameModel = useCallback(async () => {
     const selectedMessage = messages[messages.length - 1]

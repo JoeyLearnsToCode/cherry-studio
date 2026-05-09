@@ -3341,6 +3341,7 @@
       "grid_popover_trigger": {
         "click": "Clique para mostrar",
         "hover": "Passe o mouse para mostrar",
+        "longPress": "Pressão longa para mostrar",
         "label": "Disparador de detalhes da grade"
       },
       "input": {

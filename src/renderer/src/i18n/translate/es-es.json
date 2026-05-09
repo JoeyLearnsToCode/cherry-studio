@@ -3341,6 +3341,7 @@
       "grid_popover_trigger": {
         "click": "Mostrar al hacer clic",
         "hover": "Mostrar al pasar el ratón",
+        "longPress": "Mostrar al mantener pulsado",
         "label": "Desencadenante de detalles de cuadrícula"
       },
       "input": {

@@ -3360,6 +3360,7 @@
       "grid_popover_trigger": {
         "click": "Click to display",
         "hover": "Hover to display",
+        "longPress": "Long press to display",
         "label": "Grid detail trigger"
       },
       "input": {

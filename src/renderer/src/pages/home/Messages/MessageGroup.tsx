@@ -20,6 +20,8 @@ import MessageGroupMenuBar from './MessageGroupMenuBar'
 
 const logger = loggerService.withContext('MessageGroup')
 
+const LONG_PRESS_DURATION = 500 // ms
+
 interface Props {
   messages: (Message & { index: number })[]
   topic: Topic
@@ -280,28 +282,19 @@ const MessageGroup = ({ messages, topic, assistant, registerMessageElement }: Pr
 
       if (isGridGroupMessage) {
         return (
-          <Popover
+          <GridPopoverCard
             key={message.id}
-            destroyOnHidden
-            content={
-              <MessageWrapper
-                className={classNames([
-                  'in-popover',
-                  {
-                    [multiModelMessageStyle]: message.role === 'assistant' && messages.length > 1,
-                    selected: message.id === selectedMessageId
-                  }
-                ])}>
-                <MessageItem onUpdateUseful={onUpdateUseful} {...messageProps} />
-              </MessageWrapper>
-            }
-            trigger={gridPopoverTrigger}
-            styles={{
-              root: { maxWidth: '40vw', overflowY: 'auto', zIndex: 1000 },
-              body: { padding: 2 }
-            }}>
+            message={message}
+            messageProps={messageProps}
+            multiModelMessageStyle={multiModelMessageStyle}
+            messagesLength={messages.length}
+            selectedMessageId={selectedMessageId}
+            onUpdateUseful={onUpdateUseful}
+            groupContextMessageId={groupContextMessageId}
+            isGrouped={isGrouped}
+            gridPopoverTrigger={gridPopoverTrigger}>
             {messageContent}
-          </Popover>
+          </GridPopoverCard>
         )
       }
 
@@ -363,6 +356,9 @@ const GroupContainer = styled.div`
     .group-menu-bar {
       margin-left: 0;
       margin-right: 0;
+    }
+    .long-press-ready .grid {
+      cursor: default;
     }
   }
   &.multi-select-mode {
@@ -528,5 +524,145 @@ const MessageWrapper = styled.div<MessageWrapperProps>`
     }
   }
 `
+
+/** Module-level coordinator: only one grid popover can be open at a time */
+let closeActiveGridPopover: (() => void) | null = null
+
+/** Grid card with popover, supporting hover/click/longPress triggers */
+const GridPopoverCard = memo(function GridPopoverCard({
+  message,
+  messageProps,
+  multiModelMessageStyle,
+  messagesLength,
+  selectedMessageId,
+  onUpdateUseful,
+  gridPopoverTrigger,
+  children
+}: {
+  message: Message & { index: number }
+  messageProps: { isGrouped: boolean; message: Message & { index: number }; topic: Topic; index: number }
+  multiModelMessageStyle: MultiModelMessageStyle
+  messagesLength: number
+  selectedMessageId: string | undefined
+  onUpdateUseful: (msgId: string) => void
+  groupContextMessageId: string
+  isGrouped: boolean
+  gridPopoverTrigger: 'hover' | 'click' | 'longPress'
+  children: React.ReactNode
+}) {
+  const isLongPress = gridPopoverTrigger === 'longPress'
+
+  // State for longPress mode
+  const [popoverOpen, setPopoverOpen] = useState(false)
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const longPressSatisfiedRef = useRef(false) // true after holding >= LONG_PRESS_DURATION
+
+  const clearLongPressTimer = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }, [])
+
+  const openPopover = useCallback(() => {
+    // Close any previously open grid popover first
+    closeActiveGridPopover?.()
+    setPopoverOpen(true)
+    // Register this popover as the active one
+    closeActiveGridPopover = () => setPopoverOpen(false)
+  }, [])
+
+  const cardRef = useRef<HTMLDivElement>(null)
+
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (!isLongPress) return
+      if (e.button !== 0) return // Only left button
+      clearLongPressTimer()
+      longPressSatisfiedRef.current = false
+      longPressTimerRef.current = setTimeout(() => {
+        // Mark that the long-press duration has been satisfied
+        // Don't open yet — wait for mouseup
+        longPressSatisfiedRef.current = true
+        // One-time visual feedback: cursor changes from pointer to default
+        cardRef.current?.classList.add('long-press-ready')
+      }, LONG_PRESS_DURATION)
+    },
+    [isLongPress, clearLongPressTimer]
+  )
+
+  const handleMouseUp = useCallback(() => {
+    if (!isLongPress) return
+    clearLongPressTimer()
+    if (longPressSatisfiedRef.current) {
+      longPressSatisfiedRef.current = false
+      openPopover()
+    }
+  }, [isLongPress, clearLongPressTimer, openPopover])
+
+  const handleMouseLeave = useCallback(() => {
+    if (!isLongPress) return
+    clearLongPressTimer()
+    longPressSatisfiedRef.current = false
+  }, [isLongPress, clearLongPressTimer])
+
+  const popoverContent = (
+    <MessageWrapper
+      className={classNames([
+        'in-popover',
+        {
+          [multiModelMessageStyle]: message.role === 'assistant' && messagesLength > 1,
+          selected: message.id === selectedMessageId
+        }
+      ])}>
+      <MessageItem onUpdateUseful={onUpdateUseful} {...messageProps} />
+    </MessageWrapper>
+  )
+
+  // For longPress mode, fully controlled Popover
+  // Use trigger="click" so Ant Design properly tracks outside clicks and calls
+  // onOpenChange(false) when clicking outside or on the card itself.
+  // We block onOpenChange(true) to ensure only our long-press logic can open.
+  if (isLongPress) {
+    return (
+      <Popover
+        destroyOnHidden
+        content={popoverContent}
+        trigger="click"
+        open={popoverOpen}
+        onOpenChange={(open) => {
+          if (open) return // Block: only long-press can open
+          setPopoverOpen(false)
+          if (closeActiveGridPopover === openPopover) closeActiveGridPopover = null
+        }}
+        styles={{
+          root: { maxWidth: '40vw', overflowY: 'auto', zIndex: 1000 },
+          body: { padding: 2 }
+        }}>
+        <div
+          ref={cardRef}
+          onMouseDown={handleMouseDown}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseLeave}>
+          {children}
+        </div>
+      </Popover>
+    )
+  }
+
+  // For hover/click modes, use the original behavior
+  return (
+    <Popover
+      destroyOnHidden
+      content={popoverContent}
+      trigger={gridPopoverTrigger}
+      styles={{
+        root: { maxWidth: '40vw', overflowY: 'auto', zIndex: 1000 },
+        body: { padding: 2 }
+      }}>
+      {children}
+    </Popover>
+  )
+})
 
 export default memo(MessageGroup)

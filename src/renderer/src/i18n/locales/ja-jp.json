@@ -3359,6 +3359,7 @@
       "grid_popover_trigger": {
         "click": "クリックで表示",
         "hover": "ホバーで表示",
+        "longPress": "長押しで表示",
         "label": "グリッド詳細トリガー"
       },
       "input": {

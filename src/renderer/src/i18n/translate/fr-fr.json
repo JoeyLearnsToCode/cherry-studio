@@ -3341,6 +3341,7 @@
       "grid_popover_trigger": {
         "click": "Afficher au clic",
         "hover": "Afficher au survol",
+        "longPress": "Afficher au maintien long",
         "label": "Déclencheur de popover de la grille"
       },
       "input": {
