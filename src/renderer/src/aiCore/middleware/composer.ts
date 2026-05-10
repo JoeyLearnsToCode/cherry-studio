@@ -253,12 +253,34 @@ export function applyCompletionsMiddlewares<
       const abortSignal = context._internal.flowControl?.abortSignal
       const timeout = context._internal.customState?.sdkMetadata?.timeout
 
+      // 合并 provider 和 model 级别的自定义请求参数（model 优先级更高）
+      const provider = originalApiClientInstance.provider
+      // 优先从 provider.models 中找最新的 model 对象，避免 assistant.model 快照过期
+      const modelId = params.assistant?.model?.id
+      const freshModel = modelId ? provider.models?.find((m) => m.id === modelId) : undefined
+      const model = freshModel ?? params.assistant?.model
+
+      const mergedPayload = Object.assign(
+        {},
+        sdkPayload,
+        provider.extra_body || {},
+        model?.extra_body || {}
+      ) as TSdkParams
+
+      const mergedHeaders = {
+        ...(options as any)?.headers,
+        ...(provider.extra_headers || {}),
+        ...(model?.extra_headers || {})
+      }
+      const mergedOptions = {
+        ...options,
+        signal: abortSignal,
+        timeout,
+        ...(Object.keys(mergedHeaders).length > 0 ? { headers: mergedHeaders } : {})
+      }
+
       const methodCall = async (payload) => {
-        return await originalCompletionsMethod.call(originalApiClientInstance, payload, {
-          ...options,
-          signal: abortSignal,
-          timeout
-        })
+        return await originalCompletionsMethod.call(originalApiClientInstance, payload, mergedOptions)
       }
 
       const traceParams = {
@@ -270,7 +292,7 @@ export function applyCompletionsMiddlewares<
 
       // Call the original SDK method with transformed parameters
       // 使用转换后的参数调用原始 SDK 方法
-      const rawOutput = await withSpanResult(methodCall, traceParams, sdkPayload)
+      const rawOutput = await withSpanResult(methodCall, traceParams, mergedPayload)
 
       // Return result wrapped in CompletionsResult format
       // 以 CompletionsResult 格式返回包装的结果

@@ -35,10 +35,10 @@ import {
 } from '..'
 import ApiOptionsSettingsPopup from './ApiOptionsSettings/ApiOptionsSettingsPopup'
 import AwsBedrockSettings from './AwsBedrockSettings'
-import CustomHeaderPopup from './CustomHeaderPopup'
 import DMXAPISettings from './DMXAPISettings'
 import GithubCopilotSettings from './GithubCopilotSettings'
 import GPUStackSettings from './GPUStackSettings'
+import ProviderCustomSettingsPopup from './ProviderCustomSettingsPopup'
 import LMStudioSettings from './LMStudioSettings'
 import ProviderOAuth from './ProviderOAuth'
 import SelectProviderModelPopup from './SelectProviderModelPopup'
@@ -334,7 +334,7 @@ const ProviderSetting: FC<Props> = ({ providerId }) => {
                 {t('settings.provider.api_host')}
                 <Button
                   type="text"
-                  onClick={() => CustomHeaderPopup.show({ provider })}
+                  onClick={() => ProviderCustomSettingsPopup.show({ provider })}
                   icon={<Settings2 size={16} />}
                 />
               </SettingSubtitle>

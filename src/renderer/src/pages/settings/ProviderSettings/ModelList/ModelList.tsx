@@ -9,6 +9,7 @@ import { SettingHelpLink, SettingHelpText, SettingHelpTextRow, SettingSubtitle }
 import EditModelPopup from '@renderer/pages/settings/ProviderSettings/EditModelPopup/EditModelPopup'
 import AddModelPopup from '@renderer/pages/settings/ProviderSettings/ModelList/AddModelPopup'
 import ManageModelsPopup from '@renderer/pages/settings/ProviderSettings/ModelList/ManageModelsPopup'
+import ModelCustomSettingsPopup from '@renderer/pages/settings/ProviderSettings/ModelList/ModelCustomSettingsPopup'
 import NewApiAddModelPopup from '@renderer/pages/settings/ProviderSettings/ModelList/NewApiAddModelPopup'
 import { Model } from '@renderer/types'
 import { filterModelsByKeywords } from '@renderer/utils'
@@ -139,6 +140,7 @@ const ModelList: React.FC<ModelListProps> = ({ providerId }) => {
                 onEditModel={(model) => EditModelPopup.show({ provider, model })}
                 onRemoveModel={removeModel}
                 onRemoveGroup={() => displayedModelGroups[group].forEach((model) => removeModel(model))}
+                onCustomSettingsModel={(model) => ModelCustomSettingsPopup.show({ model, providerId: provider.id })}
                 disabled={!editable}
               />
             ))}

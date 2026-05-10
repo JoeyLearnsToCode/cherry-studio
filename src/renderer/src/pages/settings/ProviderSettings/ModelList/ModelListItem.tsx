@@ -7,7 +7,7 @@ import { Model } from '@renderer/types'
 import { ModelWithStatus } from '@renderer/types/healthCheck'
 import { maskApiKey } from '@renderer/utils/api'
 import { Avatar, Button, Tooltip } from 'antd'
-import { Bolt, Minus } from 'lucide-react'
+import { Bolt, Minus, Settings2 } from 'lucide-react'
 import React, { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -19,9 +19,18 @@ interface ModelListItemProps {
   disabled?: boolean
   onEdit: (model: Model) => void
   onRemove: (model: Model) => void
+  onCustomSettings: (model: Model) => void
 }
 
-const ModelListItem: React.FC<ModelListItemProps> = ({ ref, model, modelStatus, disabled, onEdit, onRemove }) => {
+const ModelListItem: React.FC<ModelListItemProps> = ({
+  ref,
+  model,
+  modelStatus,
+  disabled,
+  onEdit,
+  onRemove,
+  onCustomSettings
+}) => {
   const { t } = useTranslation()
   const isChecking = modelStatus?.checking === true
 
@@ -52,6 +61,14 @@ const ModelListItem: React.FC<ModelListItemProps> = ({ ref, model, modelStatus, 
       <HStack alignItems="center" gap={6}>
         <HealthStatusIndicator results={healthResults} loading={isChecking} showLatency />
         <HStack alignItems="center" gap={0}>
+          <Tooltip title={t('settings.provider.copilot.model_custom_settings')} mouseLeaveDelay={0}>
+            <Button
+              type="text"
+              onClick={() => onCustomSettings(model)}
+              disabled={disabled}
+              icon={<Settings2 size={14} />}
+            />
+          </Tooltip>
           <Tooltip title={t('models.edit')} mouseLeaveDelay={0}>
             <Button type="text" onClick={() => onEdit(model)} disabled={disabled} icon={<Bolt size={14} />} />
           </Tooltip>

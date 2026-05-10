@@ -259,6 +259,7 @@ export type Provider = {
   isVertex?: boolean
   notes?: string
   extra_headers?: Record<string, string>
+  extra_body?: Record<string, any>
 }
 
 export const SystemProviderIds = {
@@ -386,6 +387,8 @@ export type Model = {
   endpoint_type?: EndpointType
   supported_endpoint_types?: EndpointType[]
   supported_text_delta?: boolean
+  extra_headers?: Record<string, string>
+  extra_body?: Record<string, any>
 }
 
 export type Suggestion = {

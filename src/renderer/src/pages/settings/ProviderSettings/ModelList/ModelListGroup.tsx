@@ -21,6 +21,7 @@ interface ModelListGroupProps {
   onEditModel: (model: Model) => void
   onRemoveModel: (model: Model) => void
   onRemoveGroup: () => void
+  onCustomSettingsModel: (model: Model) => void
 }
 
 const ModelListGroup: React.FC<ModelListGroupProps> = ({
@@ -31,7 +32,8 @@ const ModelListGroup: React.FC<ModelListGroupProps> = ({
   disabled,
   onEditModel,
   onRemoveModel,
-  onRemoveGroup
+  onRemoveGroup,
+  onCustomSettingsModel
 }) => {
   const { t } = useTranslation()
   const listRef = useRef<DynamicVirtualListRef>(null)
@@ -92,6 +94,7 @@ const ModelListGroup: React.FC<ModelListGroupProps> = ({
               modelStatus={modelStatuses.find((status) => status.model.id === model.id)}
               onEdit={onEditModel}
               onRemove={onRemoveModel}
+              onCustomSettings={onCustomSettingsModel}
               disabled={disabled}
             />
           )}
