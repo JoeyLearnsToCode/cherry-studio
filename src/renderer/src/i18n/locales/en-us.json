@@ -1606,7 +1606,8 @@
       "select": "Model Types",
       "text": "Text",
       "vision": "Vision",
-      "websearch": "WebSearch"
+      "websearch": "WebSearch",
+      "image": "Image Generation"
     }
   },
   "navbar": {

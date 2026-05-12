@@ -1606,7 +1606,8 @@
       "select": "模型类型",
       "text": "文本",
       "vision": "视觉",
-      "websearch": "联网"
+      "websearch": "联网",
+      "image": "图片生成"
     }
   },
   "navbar": {

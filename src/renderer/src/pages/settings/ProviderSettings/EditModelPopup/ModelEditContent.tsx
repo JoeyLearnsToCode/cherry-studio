@@ -1,6 +1,7 @@
 import CopyIcon from '@renderer/components/Icons/CopyIcon'
 import {
   EmbeddingTag,
+  ImageTag,
   ReasoningTag,
   RerankerTag,
   ToolsCallingTag,
@@ -12,6 +13,7 @@ import { endpointTypeOptions } from '@renderer/config/endpointTypes'
 import {
   isEmbeddingModel,
   isFunctionCallingModel,
+  isGenerateImageModel,
   isReasoningModel,
   isRerankModel,
   isVisionModel,
@@ -123,7 +125,8 @@ const ModelEditContent: FC<ModelEditContentProps & ModalProps> = ({ provider, mo
       ...(isFunctionCallingModel(model) ? (['function_calling'] as const) : []),
       ...(isWebSearchModel(model) ? (['web_search'] as const) : []),
       ...(isEmbeddingModel(model) ? (['embedding'] as const) : []),
-      ...(isRerankModel(model) ? (['rerank'] as const) : [])
+      ...(isRerankModel(model) ? (['rerank'] as const) : []),
+      ...(isGenerateImageModel(model) ? (['image'] as const) : [])
     ],
     [model]
   )
@@ -237,6 +240,12 @@ const ModelEditContent: FC<ModelEditContentProps & ModalProps> = ({ provider, mo
             inactive={isEmbeddingDisabled || !selectedTypes.includes('embedding')}
             disabled={isEmbeddingDisabled}
             onClick={() => updateType('embedding')}
+          />
+          <ImageTag
+            showLabel
+            inactive={isOtherDisabled || !selectedTypes.includes('image')}
+            disabled={isOtherDisabled}
+            onClick={() => updateType('image')}
           />
         </Flex>
       </>
