@@ -1,6 +1,7 @@
 import {
   isEmbeddingModel,
   isFunctionCallingModel,
+  isGenerateImageModel,
   isReasoningModel,
   isRerankModel,
   isVisionModel,
@@ -19,7 +20,8 @@ const initialTagSelection: Record<ModelTag, boolean> = {
   function_calling: false,
   web_search: false,
   rerank: false,
-  free: false
+  free: false,
+  image: false
 }
 
 /**
@@ -34,7 +36,8 @@ export function useModelTagFilter() {
       function_calling: isFunctionCallingModel,
       web_search: isWebSearchModel,
       rerank: isRerankModel,
-      free: isFreeModel
+      free: isFreeModel,
+      image: isGenerateImageModel
     }),
     []
   )

@@ -75,7 +75,8 @@ describe('model', () => {
         rerank: false,
         free: false,
         function_calling: false,
-        web_search: true
+        web_search: true,
+        image: false
       }
       expect(getModelTags(models_1)).toStrictEqual(expected_1)
 
@@ -87,7 +88,8 @@ describe('model', () => {
         rerank: true,
         free: true,
         function_calling: true,
-        web_search: false
+        web_search: false,
+        image: false
       }
       expect(getModelTags(models_2)).toStrictEqual(expected_2)
     })

@@ -2329,6 +2329,27 @@ const migrateConfig = {
     } catch (error) {
       return state
     }
+  },
+  '145': (state: RootState) => {
+    try {
+      // Backfill image + vision capabilities for existing models whose ID contains "image"
+      state.llm.providers.forEach((provider) => {
+        provider.models.forEach((model) => {
+          if (/image/i.test(model.id || model.name || '')) {
+            if (!model.capabilities) model.capabilities = []
+            if (!model.capabilities.find((c) => c.type === 'vision')) {
+              model.capabilities.push({ type: 'vision' })
+            }
+            if (!model.capabilities.find((c) => c.type === 'image')) {
+              model.capabilities.push({ type: 'image' })
+            }
+          }
+        })
+      })
+      return state
+    } catch (error) {
+      return state
+    }
   }
 }
 

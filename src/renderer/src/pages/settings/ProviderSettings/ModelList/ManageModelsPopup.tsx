@@ -199,6 +199,19 @@ const PopupContainer: React.FC<Props> = ({ providerId, resolve }) => {
         }))
         .filter((model) => !isEmpty(model.name))
 
+      // Auto-infer image capability: model name contains "image" → vision + image
+      filteredModels.forEach((model: any) => {
+        if (/image/i.test(model.id || model.name || '')) {
+          if (!model.capabilities) model.capabilities = []
+          if (!model.capabilities.find((c: any) => c.type === 'vision')) {
+            model.capabilities.push({ type: 'vision' })
+          }
+          if (!model.capabilities.find((c: any) => c.type === 'image')) {
+            model.capabilities.push({ type: 'image' })
+          }
+        }
+      })
+
       setListModels(filteredModels)
     } catch (error) {
       logger.error(`Failed to load models for provider ${getFancyProviderName(provider)}`, error as Error)

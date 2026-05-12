@@ -50,7 +50,8 @@ function createSelection(overrides: Partial<Record<ModelTag, boolean>> = {}): Re
     function_calling: true,
     web_search: true,
     rerank: true,
-    free: true
+    free: true,
+    image: true
   }
   return { ...base, ...overrides }
 }

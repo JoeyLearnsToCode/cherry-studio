@@ -1,6 +1,7 @@
 import {
   isEmbeddingModel,
   isFunctionCallingModel,
+  isGenerateImageModel,
   isReasoningModel,
   isRerankModel,
   isVisionModel,
@@ -21,7 +22,8 @@ export const getModelTags = (models: Model[]): Record<ModelTag, boolean> => {
     function_calling: false,
     web_search: false,
     rerank: false,
-    free: false
+    free: false,
+    image: false
   }
   const total = objectKeys(result).length
   let satisfied = 0
@@ -53,6 +55,10 @@ export const getModelTags = (models: Model[]): Record<ModelTag, boolean> => {
     if (!result.rerank && isRerankModel(model)) {
       satisfied += 1
       result.rerank = true
+    }
+    if (!result.image && isGenerateImageModel(model)) {
+      satisfied += 1
+      result.image = true
     }
     if (!result.free && isFreeModel(model)) {
       satisfied += 1

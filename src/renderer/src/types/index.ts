@@ -350,7 +350,7 @@ export type ProviderType =
   | 'mistral'
   | 'aws-bedrock'
 
-export type ModelType = 'text' | 'vision' | 'embedding' | 'reasoning' | 'function_calling' | 'web_search' | 'rerank'
+export type ModelType = 'text' | 'vision' | 'embedding' | 'reasoning' | 'function_calling' | 'web_search' | 'rerank' | 'image'
 
 export type ModelTag = Exclude<ModelType, 'text'> | 'free'
 
@@ -401,7 +401,7 @@ export type PaintingParams = {
   files: FileMetadata[]
 }
 
-export type PaintingProvider = 'zhipu' | 'aihubmix' | 'silicon' | 'dmxapi' | 'new-api'
+export type PaintingProvider = 'zhipu' | 'aihubmix' | 'silicon' | 'dmxapi' | 'new-api' | (string & {})
 
 export interface Painting extends PaintingParams {
   model?: string
