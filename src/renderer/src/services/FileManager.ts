@@ -138,6 +138,9 @@ class FileManager {
 
   static getFileUrl(file: FileMetadata) {
     const filesPath = store.getState().runtime.filesPath
+    if (file.id?.startsWith('Output/')) {
+      return 'file://' + filesPath + '/Output/' + file.name
+    }
     return 'file://' + filesPath + '/' + file.name
   }
 

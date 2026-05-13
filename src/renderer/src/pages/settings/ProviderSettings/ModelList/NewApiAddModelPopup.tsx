@@ -1,10 +1,17 @@
 import { TopView } from '@renderer/components/TopView'
 import { endpointTypeOptions } from '@renderer/config/endpointTypes'
-import { isNotSupportedTextDelta } from '@renderer/config/models'
+import {
+  FUNCTION_CALLING_REGEX,
+  GENERATE_IMAGE_MODELS,
+  isNotSupportedTextDelta,
+  OPENAI_IMAGE_GENERATION_MODELS,
+  REASONING_REGEX,
+  VISION_REGEX
+} from '@renderer/config/models'
 import { useDynamicLabelWidth } from '@renderer/hooks/useDynamicLabelWidth'
 import { useProvider } from '@renderer/hooks/useProvider'
-import { EndpointType, Model, Provider } from '@renderer/types'
-import { getDefaultGroupName } from '@renderer/utils'
+import { EndpointType, Model, ModelType, Provider } from '@renderer/types'
+import { getDefaultGroupName, getLowerBaseModelName } from '@renderer/utils'
 import { Button, Flex, Form, FormProps, Input, Modal, Select } from 'antd'
 import { find } from 'lodash'
 import { useState } from 'react'
@@ -63,7 +70,30 @@ const PopupContainer: React.FC<Props> = ({ title, provider, resolve, model, endp
       endpoint_type: provider.id === 'new-api' ? values.endpointType : undefined
     }
 
-    addModel({ ...model, supported_text_delta: !isNotSupportedTextDelta(model) })
+    // Auto-detect capabilities based on model name (direct regex, no provider lookup needed)
+    const modelId = getLowerBaseModelName(id, '/')
+    const modelIdLower = id.toLowerCase()
+    const capabilities: { type: ModelType; isUserSelected?: boolean }[] = []
+    if (VISION_REGEX.test(modelId)) capabilities.push({ type: 'vision', isUserSelected: true })
+    if (REASONING_REGEX.test(modelId)) capabilities.push({ type: 'reasoning', isUserSelected: true })
+    if (FUNCTION_CALLING_REGEX.test(modelId)) capabilities.push({ type: 'function_calling', isUserSelected: true })
+    if (
+      GENERATE_IMAGE_MODELS.some((m) => modelId.includes(m)) ||
+      OPENAI_IMAGE_GENERATION_MODELS.some((m) => modelId.includes(m)) ||
+      modelIdLower.includes('image')
+    ) {
+      capabilities.push({ type: 'image', isUserSelected: true })
+      // Image models also support vision
+      if (!capabilities.some((c) => c.type === 'vision')) {
+        capabilities.push({ type: 'vision', isUserSelected: true })
+      }
+    }
+
+    addModel({
+      ...model,
+      supported_text_delta: !isNotSupportedTextDelta(model),
+      capabilities: capabilities.length > 0 ? capabilities : undefined
+    })
 
     return true
   }

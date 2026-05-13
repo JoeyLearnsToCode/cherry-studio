@@ -11,14 +11,19 @@ import {
   isRerankModel,
   isVisionModel,
   isWebSearchModel,
-  SYSTEM_MODELS
+  SYSTEM_MODELS,
+  FUNCTION_CALLING_REGEX,
+  GENERATE_IMAGE_MODELS,
+  OPENAI_IMAGE_GENERATION_MODELS,
+  REASONING_REGEX,
+  VISION_REGEX
 } from '@renderer/config/models'
 import { useProvider } from '@renderer/hooks/useProvider'
 import NewApiAddModelPopup from '@renderer/pages/settings/ProviderSettings/ModelList/NewApiAddModelPopup'
 import NewApiBatchAddModelPopup from '@renderer/pages/settings/ProviderSettings/ModelList/NewApiBatchAddModelPopup'
 import { fetchModels } from '@renderer/services/ApiService'
-import { Model, Provider } from '@renderer/types'
-import { filterModelsByKeywords, getDefaultGroupName, getFancyProviderName } from '@renderer/utils'
+import { Model, ModelType, Provider } from '@renderer/types'
+import { filterModelsByKeywords, getDefaultGroupName, getFancyProviderName, getLowerBaseModelName } from '@renderer/utils'
 import { isFreeModel } from '@renderer/utils/model'
 import { Button, Empty, Flex, Modal, Spin, Tabs, Tooltip } from 'antd'
 import Input from 'antd/es/input/Input'
@@ -129,10 +134,33 @@ const PopupContainer: React.FC<Props> = ({ providerId, resolve }) => {
   const onAddModel = useCallback(
     (model: Model) => {
       if (!isEmpty(model.name)) {
+        // Auto-detect capabilities based on model name (direct regex, no provider lookup needed)
+        const modelId = getLowerBaseModelName(model.id, '/')
+        const modelIdLower = model.id.toLowerCase()
+        const capabilities: { type: ModelType; isUserSelected?: boolean }[] = []
+        if (VISION_REGEX.test(modelId)) capabilities.push({ type: 'vision', isUserSelected: true })
+        if (REASONING_REGEX.test(modelId)) capabilities.push({ type: 'reasoning', isUserSelected: true })
+        if (FUNCTION_CALLING_REGEX.test(modelId)) capabilities.push({ type: 'function_calling', isUserSelected: true })
+        if (
+          GENERATE_IMAGE_MODELS.some((m) => modelId.includes(m)) ||
+          OPENAI_IMAGE_GENERATION_MODELS.some((m) => modelId.includes(m)) ||
+          modelIdLower.includes('image')
+        ) {
+          capabilities.push({ type: 'image', isUserSelected: true })
+          if (!capabilities.some((c) => c.type === 'vision')) {
+            capabilities.push({ type: 'vision', isUserSelected: true })
+          }
+        }
+
+        const modelWithCaps = {
+          ...model,
+          capabilities: capabilities.length > 0 ? capabilities : model.capabilities
+        }
+
         if (provider.id === 'new-api') {
           if (model.supported_endpoint_types && model.supported_endpoint_types.length > 0) {
             addModel({
-              ...model,
+              ...modelWithCaps,
               endpoint_type: model.supported_endpoint_types[0],
               supported_text_delta: !isNotSupportedTextDelta(model)
             })
@@ -140,7 +168,7 @@ const PopupContainer: React.FC<Props> = ({ providerId, resolve }) => {
             NewApiAddModelPopup.show({ title: t('settings.models.add.add_model'), provider, model })
           }
         } else {
-          addModel({ ...model, supported_text_delta: !isNotSupportedTextDelta(model) })
+          addModel({ ...modelWithCaps, supported_text_delta: !isNotSupportedTextDelta(model) })
         }
       }
     },

@@ -22,6 +22,7 @@ import {
   getProviderLabel
 } from '@renderer/i18n/label'
 import PaintingsList from '@renderer/pages/paintings/components/PaintingsList'
+import SelectUploadedFilesModal from '@renderer/pages/home/Inputbar/SelectUploadedFilesModal'
 import { DEFAULT_PAINTING, MODELS, SUPPORTED_MODELS } from '@renderer/pages/paintings/config/NewApiConfig'
 import FileManager from '@renderer/services/FileManager'
 import { translateText } from '@renderer/services/TranslateService'
@@ -69,6 +70,7 @@ const OpenAIImagePage: FC<OpenAIImagePageProps> = ({ providerId, Options }) => {
   const [spaceClickCount, setSpaceClickCount] = useState(0)
   const [isTranslating, setIsTranslating] = useState(false)
   const [editImageFiles, setEditImageFiles] = useState<File[]>([])
+  const [showSelectUploadedFiles, setShowSelectUploadedFiles] = useState(false)
 
   const { t } = useTranslation()
   const { theme } = useTheme()
@@ -77,13 +79,13 @@ const OpenAIImagePage: FC<OpenAIImagePageProps> = ({ providerId, Options }) => {
     const provider = providers.find((p) => p.id === option)
     if (provider) {
       return {
-        label: getProviderLabel(provider.id),
+        label: provider.name || getProviderLabel(provider.id),
         value: provider.id
       }
     } else {
       return {
         label: 'Unknown Provider',
-        value: undefined
+        value: option
       }
     }
   })
@@ -215,7 +217,7 @@ const OpenAIImagePage: FC<OpenAIImagePageProps> = ({ providerId, Options }) => {
             })
             return null
           }
-          return await window.api.file.download(url)
+          return await window.api.file.downloadImage(url)
         } catch (error) {
           logger.error('下载图像失败:', error as Error)
           if (
@@ -480,6 +482,34 @@ const OpenAIImagePage: FC<OpenAIImagePageProps> = ({ providerId, Options }) => {
     return false // 阻止默认上传行为
   }
 
+  const handleSelectUploadedFiles = async (files: any[]) => {
+    // Convert selected uploaded files to File objects
+    const newFiles: File[] = []
+    for (const f of files) {
+      if (f._alreadyUploaded) {
+        try {
+          const base64 = await FileManager.readBase64File(f)
+          const ext = f.ext || '.png'
+          const mimeType = ext.includes('jpg') || ext.includes('jpeg') ? 'image/jpeg' : 'image/png'
+          // Use atob instead of fetch to avoid CSP blocking data: URLs
+          const byteString = atob(base64)
+          const ab = new ArrayBuffer(byteString.length)
+          const ia = new Uint8Array(ab)
+          for (let i = 0; i < byteString.length; i++) {
+            ia[i] = byteString.charCodeAt(i)
+          }
+          const blob = new Blob([ab], { type: mimeType })
+          const file = new File([blob], f.origin_name || 'image.png', { type: mimeType })
+          newFiles.push(file)
+        } catch (error) {
+          logger.error('Failed to read uploaded file:', error as Error)
+        }
+      }
+    }
+    setEditImageFiles((prev) => [...prev, ...newFiles])
+    setShowSelectUploadedFiles(false)
+  }
+
   // 当 modelOptions 为空时，引导用户跳转到 Provider 设置页面，新增 image-generation 端点模型
   const handleShowAddModelPopup = () => {
     navigate(`/settings/provider?id=${currentProvider.id}`)
@@ -564,13 +594,38 @@ const OpenAIImagePage: FC<OpenAIImagePageProps> = ({ providerId, Options }) => {
                   <ImageUploadButton
                     accept="image/png, image/jpeg, image/gif"
                     maxCount={16}
-                    showUploadList={true}
-                    listType="picture"
+                    showUploadList={false}
                     beforeUpload={handleImageUpload}>
                     <ImagePlaceholder>
                       <ImageSizeImage src={IcImageUp} theme={theme} />
                     </ImagePlaceholder>
                   </ImageUploadButton>
+                  <Button
+                    block
+                    style={{ marginTop: 8 }}
+                    onClick={() => setShowSelectUploadedFiles(true)}>
+                    {t('chat.input.upload.select_uploaded_files')}
+                  </Button>
+                  {editImageFiles.length > 0 && (
+                    <EditImagePreviewContainer>
+                      {editImageFiles.map((file, index) => {
+                        const url = URL.createObjectURL(file)
+                        return (
+                          <EditImagePreviewItem key={index}>
+                            <img src={url} alt={file.name} onLoad={() => URL.revokeObjectURL(url)} />
+                            <EditImageRemoveButton
+                              size="small"
+                              danger
+                              onClick={() => {
+                                setEditImageFiles((prev) => prev.filter((_, i) => i !== index))
+                              }}>
+                              ×
+                            </EditImageRemoveButton>
+                          </EditImagePreviewItem>
+                        )
+                      })}
+                    </EditImagePreviewContainer>
+                  )}
                 </>
               )}
 
@@ -727,6 +782,14 @@ const OpenAIImagePage: FC<OpenAIImagePageProps> = ({ providerId, Options }) => {
           onNewPainting={handleAddPainting}
         />
       </ContentContainer>
+      <SelectUploadedFilesModal
+        open={showSelectUploadedFiles}
+        onClose={() => setShowSelectUploadedFiles(false)}
+        onConfirm={handleSelectUploadedFiles}
+        extensions={['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']}
+        couldAddImageFile={true}
+        currentFiles={[]}
+      />
     </Container>
   )
 }
@@ -828,6 +891,39 @@ const ProviderTitleContainer = styled.div`
   justify-content: space-between;
   align-items: center;
   margin-bottom: 5px;
+`
+
+const EditImagePreviewContainer = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+`
+
+const EditImagePreviewItem = styled.div`
+  position: relative;
+  width: 80px;
+  height: 80px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+`
+
+const EditImageRemoveButton = styled(Button)`
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 16px;
 `
 
 const ImageUploadButton = styled(Upload)`

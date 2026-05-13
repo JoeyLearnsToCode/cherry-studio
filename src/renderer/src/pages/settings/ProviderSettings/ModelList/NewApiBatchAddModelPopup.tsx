@@ -1,9 +1,17 @@
 import { TopView } from '@renderer/components/TopView'
 import { endpointTypeOptions } from '@renderer/config/endpointTypes'
-import { isNotSupportedTextDelta } from '@renderer/config/models'
+import {
+  FUNCTION_CALLING_REGEX,
+  GENERATE_IMAGE_MODELS,
+  isNotSupportedTextDelta,
+  OPENAI_IMAGE_GENERATION_MODELS,
+  REASONING_REGEX,
+  VISION_REGEX
+} from '@renderer/config/models'
 import { useDynamicLabelWidth } from '@renderer/hooks/useDynamicLabelWidth'
 import { useProvider } from '@renderer/hooks/useProvider'
-import { EndpointType, Model, Provider } from '@renderer/types'
+import { EndpointType, Model, ModelType, Provider } from '@renderer/types'
+import { getLowerBaseModelName } from '@renderer/utils'
 import { Button, Flex, Form, FormProps, Modal, Select } from 'antd'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -44,10 +52,29 @@ const PopupContainer: React.FC<Props> = ({ title, provider, resolve, batchModels
 
   const onAddModel = (values: FieldType) => {
     batchModels.forEach((model) => {
+      // Auto-detect capabilities based on model name
+      const modelId = getLowerBaseModelName(model.id, '/')
+      const modelIdLower = model.id.toLowerCase()
+      const capabilities: { type: ModelType; isUserSelected?: boolean }[] = []
+      if (VISION_REGEX.test(modelId)) capabilities.push({ type: 'vision', isUserSelected: true })
+      if (REASONING_REGEX.test(modelId)) capabilities.push({ type: 'reasoning', isUserSelected: true })
+      if (FUNCTION_CALLING_REGEX.test(modelId)) capabilities.push({ type: 'function_calling', isUserSelected: true })
+      if (
+        GENERATE_IMAGE_MODELS.some((m) => modelId.includes(m)) ||
+        OPENAI_IMAGE_GENERATION_MODELS.some((m) => modelId.includes(m)) ||
+        modelIdLower.includes('image')
+      ) {
+        capabilities.push({ type: 'image', isUserSelected: true })
+        if (!capabilities.some((c) => c.type === 'vision')) {
+          capabilities.push({ type: 'vision', isUserSelected: true })
+        }
+      }
+
       addModel({
         ...model,
         endpoint_type: values.endpointType,
-        supported_text_delta: !isNotSupportedTextDelta(model)
+        supported_text_delta: !isNotSupportedTextDelta(model),
+        capabilities: capabilities.length > 0 ? capabilities : model.capabilities
       })
     })
     return true

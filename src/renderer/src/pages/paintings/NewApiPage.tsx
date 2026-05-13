@@ -71,7 +71,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     const provider = providers.find((p) => p.id === option)
     if (provider) {
       return {
-        label: getProviderLabel(provider.id),
+        label: provider.name || getProviderLabel(provider.id),
         value: provider.id
       }
     } else {
