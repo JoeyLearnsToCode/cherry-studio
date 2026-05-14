@@ -120,6 +120,10 @@ export const autoRenameTopic = async (assistant: Assistant, topicId: string) => 
     }
 
     if (!enableTopicNaming) {
+      // 未启用自动命名且当前名称不是默认名称，跳过重命名
+      if (topic && topic.name !== i18n.t('chat.default.topic.name')) {
+        return
+      }
       const message = topic.messages[0]
       const blocks = findMainTextBlocks(message)
       const topicName = blocks

@@ -61,7 +61,6 @@ const MessageItem: FC<Props> = ({
   index,
   hideMenuBar = false,
   isGrouped,
-  isStreaming = false,
   onUpdateUseful,
   isGroupContextMessage
 }) => {
@@ -185,7 +184,7 @@ const MessageItem: FC<Props> = ({
 
   const isLastMessage = index === 0 || !!isGrouped
   const isAssistantMessage = message.role === 'assistant'
-  const showMenubar = !hideMenuBar && !isStreaming && !message.status.includes('ing') && !isEditing
+  const showMenubar = !hideMenuBar && !isEditing
 
   const messageHighlightHandler = useCallback(
     (highlight: boolean = true) => {
@@ -286,26 +285,24 @@ const MessageItem: FC<Props> = ({
             </MessageErrorBoundary>
           </MessageContentContainer>
           {showMenubar && (
-            <MessageFooter
-              className="MessageFooter"
-              onClick={(e) => e.stopPropagation()}>
-<MessageMenubar
-  message={message}
-  assistant={assistant as Assistant}
-  model={model}
-  index={index}
-  topic={topic}
-  isLastMessage={isLastMessage}
-  isAssistantMessage={isAssistantMessage}
-  isGrouped={isGrouped}
-  messageContainerRef={messageContainerRef as React.RefObject<HTMLDivElement>}
-  setModel={setModel}
-  onUpdateUseful={onUpdateUseful}
+            <MessageFooter className="MessageFooter" onClick={(e) => e.stopPropagation()}>
+              <MessageMenubar
+                message={message}
+                assistant={assistant as Assistant}
+                model={model}
+                index={index}
+                topic={topic}
+                isLastMessage={isLastMessage}
+                isAssistantMessage={isAssistantMessage}
+                isGrouped={isGrouped}
+                messageContainerRef={messageContainerRef as React.RefObject<HTMLDivElement>}
+                setModel={setModel}
+                onUpdateUseful={onUpdateUseful}
                 deleteConfirmOpen={deleteConfirmOpen}
                 onToggleDeleteConfirm={handleDeleteConfirmClick}
                 onResetDeleteConfirm={resetDeleteConfirm}
                 onDeleteVersion={onDeleteVersion}
-/>
+              />
             </MessageFooter>
           )}
         </>

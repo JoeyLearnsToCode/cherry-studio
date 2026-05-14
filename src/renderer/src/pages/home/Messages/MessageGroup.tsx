@@ -461,21 +461,18 @@ const MessageWrapper = styled.div<MessageWrapperProps>`
     }
   }
   &.grid {
-    max-height: var(--grid-card-max-height, none);
-    display: flex;
-    flex-direction: column;
+    aspect-ratio: 1 / 1.5;
     overflow: hidden;
     border: 0.5px solid var(--color-border);
     border-radius: 10px;
     cursor: pointer;
     .message {
-      min-height: 0;
+      height: 100%;
     }
     .message-content-container {
       flex: 1;
       min-height: 0;
-      overflow-y: auto;
-      overflow-x: hidden;
+      overflow: hidden;
       padding-left: 0;
     }
     .MessageFooter {
@@ -506,6 +503,7 @@ const MessageWrapper = styled.div<MessageWrapperProps>`
     }
   }
   &.in-popover {
+    aspect-ratio: 1 / 1.5;
     height: auto;
     border: none;
     max-height: 80vh;
@@ -575,23 +573,7 @@ const GridPopoverCard = memo(function GridPopoverCard({
   }, [])
 
   const cardRef = useRef<HTMLDivElement>(null)
-  const wrapperRef = useRef<HTMLDivElement>(null)
   const suppressClickRef = useRef(false)
-
-  // Dynamically set max-height on grid cards based on card width * aspect ratio
-  useEffect(() => {
-    const el = cardRef.current || wrapperRef.current
-    if (!el) return
-
-    const observer = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width
-      if (width) {
-        el.style.setProperty('--grid-card-max-height', `${width * 1.5}px`)
-      }
-    })
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [])
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -691,9 +673,7 @@ const GridPopoverCard = memo(function GridPopoverCard({
         root: { maxWidth: '40vw', overflowY: 'auto', zIndex: 1000 },
         body: { padding: 2 }
       }}>
-      <div ref={wrapperRef}>
-        {children}
-      </div>
+      {children}
     </Popover>
   )
 })
