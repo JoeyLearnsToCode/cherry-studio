@@ -6,6 +6,7 @@ import {
   isNotSupportedTextDelta,
   OPENAI_IMAGE_GENERATION_MODELS,
   REASONING_REGEX,
+  TEXT_TO_IMAGE_REGEX,
   VISION_REGEX
 } from '@renderer/config/models'
 import { useDynamicLabelWidth } from '@renderer/hooks/useDynamicLabelWidth'
@@ -72,7 +73,6 @@ const PopupContainer: React.FC<Props> = ({ title, provider, resolve, model, endp
 
     // Auto-detect capabilities based on model name (direct regex, no provider lookup needed)
     const modelId = getLowerBaseModelName(id, '/')
-    const modelIdLower = id.toLowerCase()
     const capabilities: { type: ModelType; isUserSelected?: boolean }[] = []
     if (VISION_REGEX.test(modelId)) capabilities.push({ type: 'vision', isUserSelected: true })
     if (REASONING_REGEX.test(modelId)) capabilities.push({ type: 'reasoning', isUserSelected: true })
@@ -80,7 +80,7 @@ const PopupContainer: React.FC<Props> = ({ title, provider, resolve, model, endp
     if (
       GENERATE_IMAGE_MODELS.some((m) => modelId.includes(m)) ||
       OPENAI_IMAGE_GENERATION_MODELS.some((m) => modelId.includes(m)) ||
-      modelIdLower.includes('image')
+      TEXT_TO_IMAGE_REGEX.test(modelId)
     ) {
       capabilities.push({ type: 'image', isUserSelected: true })
       // Image models also support vision

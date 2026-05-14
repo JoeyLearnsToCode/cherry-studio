@@ -5,7 +5,8 @@ import {
   isNotSupportedTextDelta,
   OPENAI_IMAGE_GENERATION_MODELS,
   REASONING_REGEX,
-  VISION_REGEX
+  VISION_REGEX,
+  TEXT_TO_IMAGE_REGEX
 } from '@renderer/config/models'
 import { useProvider } from '@renderer/hooks/useProvider'
 import { Model, ModelType, Provider } from '@renderer/types'
@@ -66,7 +67,6 @@ const PopupContainer: React.FC<Props> = ({ title, provider, resolve }) => {
 
     // Auto-detect capabilities based on model name (direct regex, no provider lookup needed)
     const modelId = getLowerBaseModelName(id, '/')
-    const modelIdLower = id.toLowerCase()
     const capabilities: { type: ModelType; isUserSelected?: boolean }[] = []
     if (VISION_REGEX.test(modelId)) capabilities.push({ type: 'vision', isUserSelected: true })
     if (REASONING_REGEX.test(modelId)) capabilities.push({ type: 'reasoning', isUserSelected: true })
@@ -74,7 +74,7 @@ const PopupContainer: React.FC<Props> = ({ title, provider, resolve }) => {
     if (
       GENERATE_IMAGE_MODELS.some((m) => modelId.includes(m)) ||
       OPENAI_IMAGE_GENERATION_MODELS.some((m) => modelId.includes(m)) ||
-      modelIdLower.includes('image')
+      TEXT_TO_IMAGE_REGEX.test(modelId)
     ) {
       capabilities.push({ type: 'image', isUserSelected: true })
       if (!capabilities.some((c) => c.type === 'vision')) {

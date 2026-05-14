@@ -2142,7 +2142,7 @@ export const VISION_REGEX = new RegExp(
 )
 
 // Text to image models
-export const TEXT_TO_IMAGE_REGEX = /flux|diffusion|stabilityai|sd-|dall|cogview|janus|midjourney|mj-|image|gpt-image/i
+export const TEXT_TO_IMAGE_REGEX = /flux|diffusion|stabilityai|sd-|dall|cogview|janus|midjourney|mj-|image|gpt-image|firefly|imagen|ideogram|leonardo|playgroundai|pixart|kolors|dreamina|kling|seedream|niji|deepfloyd|recraft|sora|imagine|wan/i
 
 // Reasoning models
 export const REASONING_REGEX =
@@ -2271,7 +2271,7 @@ export const getThinkModelType = (model: Model): ThinkingModelType => {
 }
 
 export function isFunctionCallingModel(model?: Model): boolean {
-  if (!model || isEmbeddingModel(model) || isRerankModel(model) || isTextToImageModel(model)) {
+  if (!model || isEmbeddingModel(model) || isRerankModel(model)) {
     return false
   }
 
@@ -2344,6 +2344,7 @@ export const isDedicatedImageGenerationModel = (model: Model): boolean => {
   return DEDICATED_IMAGE_MODELS.filter((m) => modelId.includes(m)).length > 0
 }
 
+// 能生成图像的模型（包含多模态 + 专用）
 export function isGenerateImageModel(model: Model): boolean {
   if (!model) {
     return false
@@ -2355,7 +2356,11 @@ export function isGenerateImageModel(model: Model): boolean {
     return false
   }
 
-  if (isEmbeddingModel(model)) {
+  if (isUserSelectedModelType(model, 'image') !== undefined) {
+    return isUserSelectedModelType(model, 'image')!
+  }
+
+  if (isEmbeddingModel(model) || isRerankModel(model)) {
     return false
   }
 
@@ -2380,6 +2385,7 @@ export const PERPLEXITY_SEARCH_MODELS = [
   'sonar-deep-research'
 ]
 
+// 专用图像生成模型（排除文本处理场景）
 export function isTextToImageModel(model: Model): boolean {
   const modelId = getLowerBaseModelName(model.id)
   return TEXT_TO_IMAGE_REGEX.test(modelId)
@@ -2785,7 +2791,7 @@ export const isStepReasoningModel = (model?: Model): boolean => {
 }
 
 export function isReasoningModel(model?: Model): boolean {
-  if (!model || isEmbeddingModel(model) || isRerankModel(model) || isTextToImageModel(model)) {
+  if (!model || isEmbeddingModel(model) || isRerankModel(model)) {
     return false
   }
 
@@ -2854,7 +2860,7 @@ export function isNotSupportTemperatureAndTopP(model: Model): boolean {
 }
 
 export function isWebSearchModel(model: Model): boolean {
-  if (!model || isEmbeddingModel(model) || isRerankModel(model) || isTextToImageModel(model)) {
+  if (!model || isEmbeddingModel(model) || isRerankModel(model)) {
     return false
   }
 

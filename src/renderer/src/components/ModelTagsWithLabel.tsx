@@ -1,6 +1,7 @@
 import {
   isEmbeddingModel,
   isFunctionCallingModel,
+  isGenerateImageModel,
   isReasoningModel,
   isRerankModel,
   isVisionModel,
@@ -15,6 +16,7 @@ import styled from 'styled-components'
 import {
   EmbeddingTag,
   FreeTag,
+  ImageTag,
   ReasoningTag,
   RerankerTag,
   ToolsCallingTag,
@@ -83,6 +85,7 @@ const ModelTagsWithLabel: FC<ModelTagsProps> = ({
       {showToolsCalling && isFunctionCallingModel(model) && (
         <ToolsCallingTag size={size} showTooltip={showTooltip} showLabel={shouldShowLabel} />
       )}
+      {isGenerateImageModel(model) && <ImageTag size={size} showTooltip={showTooltip} showLabel={shouldShowLabel} />}
       {isEmbeddingModel(model) && <EmbeddingTag size={size} />}
       {showFree && isFreeModel(model) && <FreeTag size={size} />}
       {isRerankModel(model) && <RerankerTag size={size} />}
