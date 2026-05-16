@@ -18,6 +18,7 @@ import {
 } from '@google/genai'
 import { loggerService } from '@logger'
 import { nanoid } from '@reduxjs/toolkit'
+import { proxyForbiddenHeaders } from '@renderer/aiCore/headers'
 import { GenericChunk } from '@renderer/aiCore/middleware/schemas'
 import {
   findTokenLimit,
@@ -181,7 +182,7 @@ export class GeminiAPIClient extends BaseApiClient<
         baseUrl: this.getBaseURL(),
         apiVersion: this.getApiVersion(),
         headers: {
-          ...this.provider.extra_headers
+          ...proxyForbiddenHeaders(this.provider.extra_headers)
         }
       }
     })

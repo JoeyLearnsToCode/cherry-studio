@@ -45,6 +45,8 @@ import { findFileBlocks, findImageBlocks } from '@renderer/utils/messageUtils/fi
 import { MB } from '@shared/config/constant'
 import { t } from 'i18next'
 import { isEmpty } from 'lodash'
+import { proxyForbiddenHeaders } from '@renderer/aiCore/headers'
+
 import OpenAI, { AzureOpenAI } from 'openai'
 import { ResponseInput } from 'openai/resources/responses/responses'
 
@@ -140,7 +142,7 @@ export class OpenAIResponseAPIClient extends OpenAIBaseClient<
         maxRetries: 0,
         defaultHeaders: {
           ...this.defaultHeaders(),
-          ...this.provider.extra_headers
+          ...proxyForbiddenHeaders(this.provider.extra_headers)
         }
       })
     }
