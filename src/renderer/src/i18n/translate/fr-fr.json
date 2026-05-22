@@ -1319,7 +1319,8 @@
       "delete": {
         "content": "La suppression du groupe de messages supprimera les questions des utilisateurs et toutes les réponses des assistants",
         "title": "Supprimer le groupe de messages"
-      }
+      },
+      "delete_failed": "Supprimer les messages échoués"
     },
     "ignore": {
       "knowledge": {

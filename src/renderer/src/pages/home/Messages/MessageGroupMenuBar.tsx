@@ -16,7 +16,7 @@ import { selectMessagesForTopic } from '@renderer/store/newMessage'
 import type { Topic, Assistant, Model } from '@renderer/types'
 import { type Message, MessageBlockType } from '@renderer/types/newMessage'
 import { Button, Tooltip } from 'antd'
-import { AtSign, MessageSquarePlus } from 'lucide-react'
+import { AtSign, BrushCleaning, MessageSquarePlus } from 'lucide-react'
 import { FC, memo, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -44,7 +44,7 @@ const MessageGroupMenuBar: FC<Props> = ({
   assistant
 }) => {
   const { t } = useTranslation()
-  const { deleteGroupMessages, appendAssistantResponse } = useMessageOperations(topic)
+  const { deleteGroupMessages, appendAssistantResponse, deleteMessage } = useMessageOperations(topic)
 
   const mentionModelFilter = useMemo(() => {
     const defaultFilter = (model: Model) => !isEmbeddingModel(model) && !isRerankModel(model)
@@ -93,6 +93,12 @@ const MessageGroupMenuBar: FC<Props> = ({
       onOk: () => deleteGroupMessages(askId)
     })
   }
+
+  const handleDeleteFailedMessages = useCallback(async () => {
+    const failedMessages = messages.filter((m) => m.status === 'error')
+    if (failedMessages.length === 0) return
+    await Promise.all(failedMessages.map((m) => deleteMessage(m.id)))
+  }, [messages, deleteMessage])
 
   const multiModelMessageStyleTextByLayout = {
     fold: t('message.message.multi_model_style.fold.label'),
@@ -144,6 +150,14 @@ const MessageGroupMenuBar: FC<Props> = ({
           size="small"
           icon={<MessageSquarePlus size={15} />}
           onClick={onRegenerateWithSameModel}
+        />
+      </Tooltip>
+      <Tooltip title={t('message.group.delete_failed')} mouseEnterDelay={0.5}>
+        <Button
+          type="text"
+          size="small"
+          icon={<BrushCleaning size={15} />}
+          onClick={handleDeleteFailedMessages}
         />
       </Tooltip>
       <Button

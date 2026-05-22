@@ -1319,7 +1319,8 @@
       "delete": {
         "content": "Eliminar el mensaje del grupo eliminará la pregunta del usuario y todas las respuestas del asistente",
         "title": "Eliminar mensaje del grupo"
-      }
+      },
+      "delete_failed": "Eliminar mensajes fallidos"
     },
     "ignore": {
       "knowledge": {

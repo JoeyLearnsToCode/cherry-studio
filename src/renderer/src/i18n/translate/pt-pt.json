@@ -1319,7 +1319,8 @@
       "delete": {
         "content": "Excluir mensagens de grupo removerá as perguntas dos usuários e todas as respostas do assistente",
         "title": "Excluir mensagens de grupo"
-      }
+      },
+      "delete_failed": "Excluir mensagens com falha"
     },
     "ignore": {
       "knowledge": {
