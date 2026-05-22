@@ -184,6 +184,7 @@ const MessageItem: FC<Props> = ({
 
   const isLastMessage = index === 0 || !!isGrouped
   const isAssistantMessage = message.role === 'assistant'
+  const isStreaming = isAssistantMessage && message.status.includes('ing')
   const showMenubar = !hideMenuBar && !isEditing
 
   const messageHighlightHandler = useCallback(
@@ -248,7 +249,8 @@ const MessageItem: FC<Props> = ({
       className={classNames({
         message: true,
         'message-assistant': isAssistantMessage,
-        'message-user': !isAssistantMessage
+        'message-user': !isAssistantMessage,
+        'is-streaming': isStreaming
       })}
       ref={messageContainerRef}>
       <MessageHeader
@@ -363,6 +365,17 @@ const MessageContainer = styled.div`
     .menubar {
       opacity: 1;
     }
+  }
+  &.is-streaming::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 10%;
+    height: 80%;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--color-primary);
+    animation: streaming-pulse 1.2s ease-in-out infinite;
   }
 `
 

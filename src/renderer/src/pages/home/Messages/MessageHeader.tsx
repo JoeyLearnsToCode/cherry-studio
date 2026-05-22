@@ -12,6 +12,7 @@ import { getMessageModelId } from '@renderer/services/MessagesService'
 import { getModelName } from '@renderer/services/ModelService'
 import type { Assistant, Model, Topic } from '@renderer/types'
 import type { Message } from '@renderer/types/newMessage'
+import { getActiveVersionCreatedAt } from '@renderer/utils/messageUtils/find'
 import { firstLetter, isEmoji, removeLeadingEmoji } from '@renderer/utils'
 import { Avatar, Checkbox, Tooltip } from 'antd'
 import dayjs from 'dayjs'
@@ -65,6 +66,9 @@ const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGro
 
   const avatarName = useMemo(() => firstLetter(assistant?.name).toUpperCase(), [assistant?.name])
   const username = useMemo(() => removeLeadingEmoji(getUserName()), [getUserName])
+  const displayTime = useMemo(() => {
+    return getActiveVersionCreatedAt(message) ?? message?.updatedAt ?? message.createdAt
+  }, [message])
 
   const showMiniApp = useCallback(() => {
     showMinappIcon && model?.provider && openMinappById(model.provider)
@@ -121,7 +125,7 @@ const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGro
           )}
         </HStack>
         <InfoWrap className="message-header-info-wrap">
-          <MessageTime>{dayjs(message?.updatedAt ?? message.createdAt).format('MM/DD HH:mm')}</MessageTime>
+          <MessageTime>{dayjs(displayTime).format('MM/DD HH:mm')}</MessageTime>
         </InfoWrap>
       </UserWrap>
       {isMultiSelectMode && (

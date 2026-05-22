@@ -143,9 +143,11 @@
   .ant-popover-inner {
     border: 0.5px solid var(--color-border);
     .ant-popover-inner-content {
+      overflow-y: auto;
+    }
+    .ant-popover-inner-content:has(div.message-header) {
       max-height: 100%;
       aspect-ratio: 1 / 1.5;
-      overflow-y: auto;
     }
   }
   .ant-popover-arrow + .ant-popover-content {
