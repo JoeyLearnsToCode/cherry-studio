@@ -173,6 +173,15 @@ export const getVersionCount = (message: Message): number => {
   return message.versions.length
 }
 
+// 获取当前生效版本的创建时间，兼容历史版本可能缺少 createdAt
+export const getActiveVersionCreatedAt = (message: Message): string | undefined => {
+  if (message.role !== 'user' || !message.versions || !message.activeVersionId) {
+    return undefined
+  }
+  const activeVersion = message.versions.find(v => v.id === message.activeVersionId)
+  return activeVersion?.createdAt ?? message.createdAt
+}
+
 /**
  * Gets the concatenated content string from all ThinkingMessageBlocks of a message, in order.
  * @param message
