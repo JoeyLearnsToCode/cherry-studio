@@ -6,7 +6,8 @@ import {
   OPENAI_IMAGE_GENERATION_MODELS,
   REASONING_REGEX,
   VISION_REGEX,
-  TEXT_TO_IMAGE_REGEX
+  TEXT_TO_IMAGE_REGEX,
+  WEB_SEARCH_MODEL_REGEX
 } from '@renderer/config/models'
 import { useProvider } from '@renderer/hooks/useProvider'
 import { Model, ModelType, Provider } from '@renderer/types'
@@ -71,6 +72,7 @@ const PopupContainer: React.FC<Props> = ({ title, provider, resolve }) => {
     if (VISION_REGEX.test(modelId)) capabilities.push({ type: 'vision', isUserSelected: true })
     if (REASONING_REGEX.test(modelId)) capabilities.push({ type: 'reasoning', isUserSelected: true })
     if (FUNCTION_CALLING_REGEX.test(modelId)) capabilities.push({ type: 'function_calling', isUserSelected: true })
+    if (WEB_SEARCH_MODEL_REGEX.test(modelId)) capabilities.push({ type: 'web_search', isUserSelected: true })
     if (
       GENERATE_IMAGE_MODELS.some((m) => modelId.includes(m)) ||
       OPENAI_IMAGE_GENERATION_MODELS.some((m) => modelId.includes(m)) ||

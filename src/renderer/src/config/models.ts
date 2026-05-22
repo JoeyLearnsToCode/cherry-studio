@@ -2086,10 +2086,7 @@ const visionAllowedModels = [
   'llava',
   'moondream',
   'minicpm',
-  'gemini-1\\.5',
-  'gemini-2\\.0',
-  'gemini-2\\.5',
-  'gemini-exp',
+  'gemini(?:-[\\w.]+)?',
   'claude-3',
   'claude-sonnet-4',
   'claude-opus-4',
@@ -2146,7 +2143,7 @@ export const TEXT_TO_IMAGE_REGEX = /flux|diffusion|stabilityai|sd-|dall|cogview|
 
 // Reasoning models
 export const REASONING_REGEX =
-  /^(o\d+(?:-[\w-]+)?|.*\b(?:reasoning|reasoner|thinking)\b.*|.*-[rR]\d+.*|.*\bqwq(?:-[\w-]+)?\b.*|.*\bhunyuan-t1(?:-[\w-]+)?\b.*|.*\bglm-zero-preview\b.*|.*\bgrok-(?:3-mini|4)(?:-[\w-]+)?\b.*)$/i
+  /^(o\d+(?:-[\w-]+)?|.*\b(?:reasoning|reasoner|thinking)\b.*|.*-[rR]\d+.*|.*\bqwq(?:-[\w-]+)?\b.*|.*\bhunyuan-t1(?:-[\w-]+)?\b.*|.*\bglm-zero-preview\b.*|.*\bgrok-(?:3-mini|4)(?:-[\w-]+)?\b.*|.*\bgemini(?:-[\w.]+)?\b.*)$/i
 
 // Embedding models
 export const EMBEDDING_REGEX =
@@ -2186,7 +2183,6 @@ const FUNCTION_CALLING_EXCLUDED_MODELS = [
   'o1-mini',
   'o1-preview',
   'AIDC-AI/Marco-o1',
-  'gemini-1(?:\\.[\\w-]+)?',
   'qwen-mt(?:-[\\w-]+)?',
   'gpt-5-chat(?:-[\\w-]+)?',
   'glm-4\\.5v'
@@ -2196,6 +2192,8 @@ export const FUNCTION_CALLING_REGEX = new RegExp(
   `\\b(?!(?:${FUNCTION_CALLING_EXCLUDED_MODELS.join('|')})\\b)(?:${FUNCTION_CALLING_MODELS.join('|')})\\b`,
   'i'
 )
+
+export const WEB_SEARCH_MODEL_REGEX = /\b(?:web|search)\b/i
 
 export const CLAUDE_SUPPORTED_WEBSEARCH_REGEX = new RegExp(
   `\\b(?:claude-3(-|\\.)(7|5)-sonnet(?:-[\\w-]+)|claude-3(-|\\.)5-haiku(?:-[\\w-]+)|claude-sonnet-4(?:-[\\w-]+)?|claude-opus-4(?:-[\\w-]+)?)\\b`,
@@ -2900,12 +2898,11 @@ export function isWebSearchModel(model: Model): boolean {
   }
 
   if (provider.id === 'aihubmix') {
-    // modelId 不以-search结尾
-    if (!modelId.endsWith('-search') && GEMINI_SEARCH_REGEX.test(modelId)) {
+    if (isOpenAIWebSearchModel(model)) {
       return true
     }
 
-    if (isOpenAIWebSearchModel(model)) {
+    if (WEB_SEARCH_MODEL_REGEX.test(modelId)) {
       return true
     }
 
@@ -2913,13 +2910,19 @@ export function isWebSearchModel(model: Model): boolean {
   }
 
   if (provider?.type === 'openai') {
-    if (GEMINI_SEARCH_REGEX.test(modelId) || isOpenAIWebSearchModel(model)) {
+    if (isOpenAIWebSearchModel(model)) {
+      return true
+    }
+
+    if (WEB_SEARCH_MODEL_REGEX.test(modelId)) {
       return true
     }
   }
 
   if (provider.id === 'gemini' || provider?.type === 'gemini' || provider.type === 'vertexai') {
-    return GEMINI_SEARCH_REGEX.test(modelId)
+    if (WEB_SEARCH_MODEL_REGEX.test(modelId)) {
+      return true
+    }
   }
 
   if (provider.id === 'hunyuan') {
