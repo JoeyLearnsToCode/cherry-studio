@@ -25,6 +25,7 @@ import {
 import { MessageStream } from '@anthropic-ai/sdk/resources/messages/messages'
 import AnthropicVertex from '@anthropic-ai/vertex-sdk'
 import { loggerService } from '@logger'
+import { proxyForbiddenHeaders } from '@renderer/aiCore/headers'
 import { GenericChunk } from '@renderer/aiCore/middleware/schemas'
 import { DEFAULT_MAX_TOKENS } from '@renderer/config/constant'
 import { findTokenLimit, isClaudeReasoningModel, isReasoningModel, isWebSearchModel } from '@renderer/config/models'
@@ -100,7 +101,7 @@ export class AnthropicAPIClient extends BaseApiClient<
       dangerouslyAllowBrowser: true,
       defaultHeaders: {
         'anthropic-beta': 'output-128k-2025-02-19',
-        ...this.provider.extra_headers
+        ...proxyForbiddenHeaders(this.provider.extra_headers)
       }
     })
     return this.sdkInstance

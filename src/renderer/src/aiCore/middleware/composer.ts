@@ -1,3 +1,4 @@
+import { proxyForbiddenHeaders } from '@renderer/aiCore/headers'
 import { withSpanResult } from '@renderer/services/SpanManagerService'
 import {
   RequestOptions,
@@ -269,8 +270,8 @@ export function applyCompletionsMiddlewares<
 
       const mergedHeaders = {
         ...(options as any)?.headers,
-        ...(provider.extra_headers || {}),
-        ...(model?.extra_headers || {})
+        ...proxyForbiddenHeaders(provider.extra_headers),
+        ...proxyForbiddenHeaders(model?.extra_headers)
       }
       const mergedOptions = {
         ...options,

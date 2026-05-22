@@ -26,6 +26,8 @@ import {
 import { formatApiHost } from '@renderer/utils/api'
 import OpenAI, { AzureOpenAI } from 'openai'
 
+import { proxyForbiddenHeaders } from '@renderer/aiCore/headers'
+
 import { BaseApiClient } from '../BaseApiClient'
 
 const logger = loggerService.withContext('OpenAIBaseClient')
@@ -168,7 +170,7 @@ export abstract class OpenAIBaseClient<
         maxRetries: 0,
         defaultHeaders: {
           ...this.defaultHeaders(),
-          ...this.provider.extra_headers,
+          ...proxyForbiddenHeaders(this.provider.extra_headers),
           ...(this.provider.id === 'copilot' ? { 'editor-version': 'vscode/1.97.2' } : {}),
           ...(this.provider.id === 'copilot' ? { 'copilot-vision-request': 'true' } : {})
         }

@@ -74,6 +74,21 @@ app.on('web-contents-created', (_, webContents) => {
     })
   })
 
+  // Support custom User-Agent from provider extra_headers.
+  // Browser fetch() silently drops forbidden headers like User-Agent,
+  // so the renderer proxies them as X-Custom-User-Agent.
+  // Here we restore the original User-Agent and remove the proxy header.
+  webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
+    const headers = { ...details.requestHeaders }
+    // Electron lowercases header keys in requestHeaders
+    const customUA = headers['x-custom-user-agent']
+    if (customUA) {
+      headers['User-Agent'] = customUA
+      delete headers['x-custom-user-agent']
+    }
+    callback({ requestHeaders: headers })
+  })
+
   webContents.on('unresponsive', async () => {
     // Interrupt execution and collect call stack from unresponsive renderer
     logger.error('Renderer unresponsive start')
