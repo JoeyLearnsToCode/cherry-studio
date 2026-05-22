@@ -69,6 +69,12 @@
   animation: animation-rotate 0.75s linear infinite;
 }
 
+// 请求中的呼吸脉冲动画
+@keyframes streaming-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
 // 定位高亮动画
 @keyframes animation-locate-highlight {
   0% {
