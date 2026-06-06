@@ -41,7 +41,7 @@ const Chat: FC<Props> = (props) => {
 
   const mainRef = React.useRef<HTMLDivElement>(null)
   const contentSearchRef = React.useRef<ContentSearchRef>(null)
-  const [filterIncludeUser, setFilterIncludeUser] = useState(false)
+  const [filterIncludeUser, setFilterIncludeUser] = useState(true)
 
   const maxWidth = useChatMaxWidth()
   const { setTimeoutTimer } = useTimer()
