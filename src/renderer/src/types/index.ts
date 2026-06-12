@@ -687,6 +687,7 @@ export type GenerateImageParams = {
 export type GenerateImageResponse = {
   type: 'url' | 'base64'
   images: string[]
+  prompt?: string
 }
 
 // 为了支持自定义语言，设置为string别名

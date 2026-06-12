@@ -7,12 +7,12 @@ import { BlockManager } from '../BlockManager'
 
 const logger = loggerService.withContext('ImageCallbacks')
 
-async function downloadImageToLocal(imageSrc: string): Promise<FileMetadata | null> {
+async function downloadImageToLocal(imageSrc: string, prompt?: string): Promise<FileMetadata | null> {
   try {
     if (imageSrc.startsWith('data:')) {
-      return await window.api.file.saveBase64ImageLocal(imageSrc)
+      return await window.api.file.saveBase64ImageLocal(imageSrc, prompt)
     } else {
-      return await window.api.file.downloadImage(imageSrc)
+      return await window.api.file.downloadImage(imageSrc, prompt)
     }
   } catch (error) {
     logger.error('Failed to download image to local, will use remote fallback:', error as Error)
@@ -87,8 +87,9 @@ export const createImageCallbacks = (deps: ImageCallbacksDependencies) => {
 
           // 再 await 下载到本地，完成后更新 metadata
           const images: string[] = imageData.images || []
+          const prompt: string | undefined = imageData.prompt
           try {
-            const localFiles = await Promise.all(images.map(downloadImageToLocal))
+            const localFiles = await Promise.all(images.map((img) => downloadImageToLocal(img, prompt)))
             blockManager.smartBlockUpdate(
               blockId,
               { metadata: { generateImageResponse: imageData, localFiles, _localizing: false } } as Partial<ImageMessageBlock>,

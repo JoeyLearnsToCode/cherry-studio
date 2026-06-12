@@ -486,7 +486,7 @@ const DmxapiPage: FC<{ Options: string[] }> = ({ Options }) => {
   }
 
   // 下载图像函数
-  const downloadImages = async (urls: string[]) => {
+  const downloadImages = async (urls: string[], prompt?: string) => {
     return Promise.all(
       urls.map(async (url) => {
         try {
@@ -497,7 +497,7 @@ const DmxapiPage: FC<{ Options: string[] }> = ({ Options }) => {
             })
             return null
           }
-          return await window.api.file.download(url, true)
+          return await window.api.file.download(url, true, prompt)
         } catch (error) {
           if (
             error instanceof Error &&
@@ -574,7 +574,7 @@ const DmxapiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
       // 下载图像
       if (urls.length > 0) {
-        const downloadedFiles = await downloadImages(urls)
+        const downloadedFiles = await downloadImages(urls, prompt)
         const validFiles = downloadedFiles.filter((file): file is FileMetadata => file !== null)
 
         if (validFiles?.length > 0) {

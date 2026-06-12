@@ -58,6 +58,7 @@ export const createCallbacks = (deps: CallbacksDependencies) => {
   const textCallbacks = createTextCallbacks({
     blockManager,
     getState,
+    topicId,
     assistantMsgId,
     getCitationBlockId: citationCallbacks.getCitationBlockId
   })

@@ -367,7 +367,8 @@ export const hasLocalizableImages = (markdown: string): boolean => {
  * @returns 替换后的 Markdown 文本和下载的文件元数据
  */
 export const localizeMarkdownImages = async (
-  markdown: string
+  markdown: string,
+  prompt?: string
 ): Promise<{ content: string; files: Map<string, string> }> => {
   if (!markdown) return { content: markdown, files: new Map() }
 
@@ -398,8 +399,8 @@ export const localizeMarkdownImages = async (
     matches.map(async (m) => {
       try {
         const file = m.src.startsWith('data:')
-          ? await window.api.file.saveBase64ImageLocal(m.src)
-          : await window.api.file.downloadImage(m.src)
+          ? await window.api.file.saveBase64ImageLocal(m.src, prompt)
+          : await window.api.file.downloadImage(m.src, prompt)
         if (file) {
           // 使用 local-file: 虚拟标记，不硬编码绝对路径
           const localPath = `local-file:${file.id}${file.ext}`

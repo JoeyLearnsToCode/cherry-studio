@@ -41,6 +41,17 @@ export const ImageGenerationMiddleware: CompletionsMiddleware =
           }
 
           const prompt = getMainTextContent(lastUserMessage)
+
+          // 构建多轮对话上下文作为 PNG EXIF 元数据
+          const recentMessages = messages.slice(-6)
+          const promptContext = recentMessages
+            .map((m) => {
+              const role = m.role === 'user' ? '用户' : '助手'
+              const content = getMainTextContent(m) || '(空)'
+              return `[${role}]\n${content}`
+            })
+            .join('\n\n')
+
           let imageFiles: Blob[] = []
 
           // Collect images from user message
@@ -111,7 +122,7 @@ export const ImageGenerationMiddleware: CompletionsMiddleware =
 
           enqueue({
             type: ChunkType.IMAGE_COMPLETE,
-            image: { type: imageType, images: imageList }
+            image: { type: imageType, images: imageList, prompt: promptContext }
           })
 
           const usage = (response as any).usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }

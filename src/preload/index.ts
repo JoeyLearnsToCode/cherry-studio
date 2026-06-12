@@ -167,15 +167,16 @@ const api = {
     saveImage: (name: string, data: string) => ipcRenderer.invoke(IpcChannel.File_SaveImage, name, data),
     binaryImage: (fileId: string) => ipcRenderer.invoke(IpcChannel.File_BinaryImage, fileId),
     base64Image: (fileId: string) => ipcRenderer.invoke(IpcChannel.File_Base64Image, fileId),
-    saveBase64Image: (data: string) => ipcRenderer.invoke(IpcChannel.File_SaveBase64Image, data),
+    saveBase64Image: (data: string, prompt?: string) =>
+      ipcRenderer.invoke(IpcChannel.File_SaveBase64Image, data, prompt),
     savePastedImage: (imageData: Uint8Array, extension?: string) =>
       ipcRenderer.invoke(IpcChannel.File_SavePastedImage, imageData, extension),
-    download: (url: string, isUseContentType?: boolean) =>
-      ipcRenderer.invoke(IpcChannel.File_Download, url, isUseContentType),
-    downloadImage: (url: string): Promise<FileMetadata> =>
-      ipcRenderer.invoke(IpcChannel.File_DownloadImage, url),
-    saveBase64ImageLocal: (data: string): Promise<FileMetadata> =>
-      ipcRenderer.invoke(IpcChannel.File_SaveBase64ImageLocal, data),
+    download: (url: string, isUseContentType?: boolean, prompt?: string) =>
+      ipcRenderer.invoke(IpcChannel.File_Download, url, isUseContentType, prompt),
+    downloadImage: (url: string, prompt?: string): Promise<FileMetadata> =>
+      ipcRenderer.invoke(IpcChannel.File_DownloadImage, url, prompt),
+    saveBase64ImageLocal: (data: string, prompt?: string): Promise<FileMetadata> =>
+      ipcRenderer.invoke(IpcChannel.File_SaveBase64ImageLocal, data, prompt),
     copy: (fileId: string, destPath: string) => ipcRenderer.invoke(IpcChannel.File_Copy, fileId, destPath),
     base64File: (fileId: string) => ipcRenderer.invoke(IpcChannel.File_Base64File, fileId),
     pdfInfo: (fileId: string) => ipcRenderer.invoke(IpcChannel.File_GetPdfInfo, fileId),

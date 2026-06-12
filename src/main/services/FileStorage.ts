@@ -546,7 +546,11 @@ class FileStorage {
     }
   }
 
-  public saveBase64Image = async (_: Electron.IpcMainInvokeEvent, base64Data: string): Promise<FileMetadata> => {
+  public saveBase64Image = async (
+    _: Electron.IpcMainInvokeEvent,
+    base64Data: string,
+    prompt?: string
+  ): Promise<FileMetadata> => {
     try {
       if (!base64Data) {
         throw new Error('Base64 data is required')
@@ -568,7 +572,11 @@ class FileStorage {
         bufferSize: buffer.length
       })
 
-      await fs.promises.writeFile(destPath, buffer)
+      let writeBuffer: Buffer = buffer
+      if (prompt) {
+        writeBuffer = await this.writeExifToPng(buffer, prompt, destPath)
+      }
+      await fs.promises.writeFile(destPath, writeBuffer)
 
       return {
         id: `Output/${uuid}`,
@@ -584,6 +592,54 @@ class FileStorage {
     } catch (error) {
       logger.error('Failed to save base64 image:', error as Error)
       throw error
+    }
+  }
+
+  private static isPng(buffer: Buffer): boolean {
+    return (
+      buffer.length > 8 &&
+      buffer[0] === 0x89 &&
+      buffer[1] === 0x50 &&
+      buffer[2] === 0x4e &&
+      buffer[3] === 0x47 &&
+      buffer[4] === 0x0d &&
+      buffer[5] === 0x0a &&
+      buffer[6] === 0x1a &&
+      buffer[7] === 0x0a
+    )
+  }
+
+  private static truncatePrompt(prompt: string, maxChars: number = 5000): string {
+    return prompt.length > maxChars ? prompt.slice(-maxChars) : prompt
+  }
+
+  private async writeExifToPng(buffer: Buffer, prompt: string, destPath?: string): Promise<Buffer> {
+    if (!FileStorage.isPng(buffer)) return buffer
+    // Always write debug file to diagnose prompt flow
+    const txtContent = prompt ? FileStorage.truncatePrompt(prompt) : '(NO PROMPT PROVIDED)'
+    if (destPath) {
+      const txtPath = destPath.replace(/\.png$/i, '.txt')
+      try {
+        await fs.promises.writeFile(txtPath, txtContent, 'utf8')
+      } catch { /* debug file, ignore */ }
+    }
+    if (!prompt) return buffer
+    const truncated = FileStorage.truncatePrompt(prompt)
+    try {
+      const sharp = require('sharp')
+      return await sharp(buffer)
+        .withMetadata({
+          exif: {
+            IFD0: {
+              ImageDescription: truncated
+            }
+          }
+        })
+        .png()
+        .toBuffer()
+    } catch (error) {
+      logger.warn('Failed to write EXIF to PNG: ' + (error as Error).message)
+      return buffer
     }
   }
 
@@ -604,7 +660,8 @@ class FileStorage {
 
   public downloadImageToLocal = async (
     _: Electron.IpcMainInvokeEvent,
-    url: string
+    url: string,
+    prompt?: string
   ): Promise<FileMetadata> => {
     try {
       const response = await net.fetch(url)
@@ -621,7 +678,11 @@ class FileStorage {
       const destPath = path.join(this.outputDir, fileName)
 
       const buffer = Buffer.from(await response.arrayBuffer())
-      await fs.promises.writeFile(destPath, buffer)
+      let writeBuffer: Buffer = buffer
+      if (prompt) {
+        writeBuffer = await this.writeExifToPng(buffer, prompt, destPath)
+      }
+      await fs.promises.writeFile(destPath, writeBuffer)
 
       const stats = await fs.promises.stat(destPath)
       const fileType = getFileType(ext)
@@ -645,7 +706,8 @@ class FileStorage {
 
   public saveBase64ImageToLocal = async (
     _: Electron.IpcMainInvokeEvent,
-    base64Data: string
+    base64Data: string,
+    prompt?: string
   ): Promise<FileMetadata> => {
     try {
       if (!base64Data) {
@@ -669,7 +731,11 @@ class FileStorage {
       }
       const destPath = path.join(this.outputDir, fileName)
 
-      await fs.promises.writeFile(destPath, buffer)
+      let writeBuffer: Buffer = buffer
+      if (prompt) {
+        writeBuffer = await this.writeExifToPng(buffer, prompt, destPath)
+      }
+      await fs.promises.writeFile(destPath, writeBuffer)
 
       const stats = await fs.promises.stat(destPath)
       const fileType = getFileType(ext)
@@ -987,7 +1053,8 @@ class FileStorage {
   public downloadFile = async (
     _: Electron.IpcMainInvokeEvent,
     url: string,
-    isUseContentType?: boolean
+    isUseContentType?: boolean,
+    prompt?: string
   ): Promise<FileMetadata> => {
     try {
       const response = await net.fetch(url)
@@ -1025,7 +1092,11 @@ class FileStorage {
 
       // 将响应内容写入文件
       const buffer = Buffer.from(await response.arrayBuffer())
-      await fs.promises.writeFile(destPath, buffer)
+      let writeBuffer: Buffer = buffer
+      if (prompt) {
+        writeBuffer = await this.writeExifToPng(buffer, prompt, destPath)
+      }
+      await fs.promises.writeFile(destPath, writeBuffer)
 
       const stats = await fs.promises.stat(destPath)
       const fileType = getFileType(ext)
