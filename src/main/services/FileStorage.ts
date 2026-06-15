@@ -546,7 +546,11 @@ class FileStorage {
     }
   }
 
-  public saveBase64Image = async (_: Electron.IpcMainInvokeEvent, base64Data: string): Promise<FileMetadata> => {
+  public saveBase64Image = async (
+    _: Electron.IpcMainInvokeEvent,
+    base64Data: string,
+    prompt?: string
+  ): Promise<FileMetadata> => {
     try {
       if (!base64Data) {
         throw new Error('Base64 data is required')
@@ -568,7 +572,11 @@ class FileStorage {
         bufferSize: buffer.length
       })
 
-      await fs.promises.writeFile(destPath, buffer)
+      let writeBuffer: Buffer = buffer
+      if (prompt) {
+        writeBuffer = await this.writeItextToPng(buffer, prompt, destPath)
+      }
+      await fs.promises.writeFile(destPath, writeBuffer)
 
       return {
         id: `Output/${uuid}`,
@@ -584,6 +592,81 @@ class FileStorage {
     } catch (error) {
       logger.error('Failed to save base64 image:', error as Error)
       throw error
+    }
+  }
+
+  private static isPng(buffer: Buffer): boolean {
+    return (
+      buffer.length > 8 &&
+      buffer[0] === 0x89 &&
+      buffer[1] === 0x50 &&
+      buffer[2] === 0x4e &&
+      buffer[3] === 0x47 &&
+      buffer[4] === 0x0d &&
+      buffer[5] === 0x0a &&
+      buffer[6] === 0x1a &&
+      buffer[7] === 0x0a
+    )
+  }
+
+  private static truncatePrompt(prompt: string, maxChars: number = 5000): string {
+    return prompt.length > maxChars ? prompt.slice(-maxChars) : prompt
+  }
+
+  private static crc32(buf: Buffer): number {
+    let crc = 0xFFFFFFFF
+    for (let i = 0; i < buf.length; i++) {
+      crc ^= buf[i]
+      for (let j = 0; j < 8; j++) {
+        crc = (crc >>> 1) ^ (crc & 1 ? 0xEDB88320 : 0)
+      }
+    }
+    return (crc ^ 0xFFFFFFFF) >>> 0
+  }
+
+  private static createPngItextChunk(keyword: string, text: string): Buffer {
+    const keywordBuf = Buffer.from(keyword, 'latin1')
+    const textBuf = Buffer.from(text, 'utf8')
+    const data = Buffer.concat([
+      keywordBuf,
+      Buffer.from([0]),
+      Buffer.from([0]),
+      Buffer.from([0]),
+      Buffer.from([0]),
+      Buffer.from([0]),
+      textBuf
+    ])
+    const length = Buffer.alloc(4)
+    length.writeUInt32BE(data.length)
+    const type = Buffer.from('iTXt')
+    const crcData = Buffer.concat([type, data])
+    const crc = FileStorage.crc32(crcData)
+    const crcBuf = Buffer.alloc(4)
+    crcBuf.writeUInt32BE(crc)
+    return Buffer.concat([length, type, data, crcBuf])
+  }
+
+  private static addPngItextChunk(pngBuffer: Buffer, keyword: string, text: string): Buffer {
+    const textChunk = FileStorage.createPngItextChunk(keyword, text)
+    const iendOffset = pngBuffer.length - 12
+    if (iendOffset < 8) return pngBuffer
+    return Buffer.concat([pngBuffer.subarray(0, iendOffset), textChunk, pngBuffer.subarray(iendOffset)])
+  }
+
+  private async writeItextToPng(buffer: Buffer, prompt: string, destPath?: string): Promise<Buffer> {
+    if (!FileStorage.isPng(buffer)) return buffer
+    const txtContent = prompt ? FileStorage.truncatePrompt(prompt) : '(NO PROMPT PROVIDED)'
+    if (destPath) {
+      const txtPath = destPath.replace(/\.png$/i, '.txt')
+      try { await fs.promises.writeFile(txtPath, txtContent, 'utf8') } catch { /* ignore */ }
+    }
+    if (!prompt) return buffer
+    const truncated = FileStorage.truncatePrompt(prompt)
+    try {
+      return FileStorage.addPngItextChunk(buffer, 'ImagenPrompt', truncated)
+    } catch (error) {
+      logger.warn('Failed to write iTXt chunk: ' + (error as Error).message)
+      return buffer
     }
   }
 
@@ -604,7 +687,8 @@ class FileStorage {
 
   public downloadImageToLocal = async (
     _: Electron.IpcMainInvokeEvent,
-    url: string
+    url: string,
+    prompt?: string
   ): Promise<FileMetadata> => {
     try {
       const response = await net.fetch(url)
@@ -621,7 +705,11 @@ class FileStorage {
       const destPath = path.join(this.outputDir, fileName)
 
       const buffer = Buffer.from(await response.arrayBuffer())
-      await fs.promises.writeFile(destPath, buffer)
+      let writeBuffer: Buffer = buffer
+      if (prompt) {
+        writeBuffer = await this.writeItextToPng(buffer, prompt, destPath)
+      }
+      await fs.promises.writeFile(destPath, writeBuffer)
 
       const stats = await fs.promises.stat(destPath)
       const fileType = getFileType(ext)
@@ -645,7 +733,8 @@ class FileStorage {
 
   public saveBase64ImageToLocal = async (
     _: Electron.IpcMainInvokeEvent,
-    base64Data: string
+    base64Data: string,
+    prompt?: string
   ): Promise<FileMetadata> => {
     try {
       if (!base64Data) {
@@ -669,7 +758,11 @@ class FileStorage {
       }
       const destPath = path.join(this.outputDir, fileName)
 
-      await fs.promises.writeFile(destPath, buffer)
+      let writeBuffer: Buffer = buffer
+      if (prompt) {
+        writeBuffer = await this.writeItextToPng(buffer, prompt, destPath)
+      }
+      await fs.promises.writeFile(destPath, writeBuffer)
 
       const stats = await fs.promises.stat(destPath)
       const fileType = getFileType(ext)
@@ -987,7 +1080,8 @@ class FileStorage {
   public downloadFile = async (
     _: Electron.IpcMainInvokeEvent,
     url: string,
-    isUseContentType?: boolean
+    isUseContentType?: boolean,
+    prompt?: string
   ): Promise<FileMetadata> => {
     try {
       const response = await net.fetch(url)
@@ -1025,7 +1119,11 @@ class FileStorage {
 
       // 将响应内容写入文件
       const buffer = Buffer.from(await response.arrayBuffer())
-      await fs.promises.writeFile(destPath, buffer)
+      let writeBuffer: Buffer = buffer
+      if (prompt) {
+        writeBuffer = await this.writeItextToPng(buffer, prompt, destPath)
+      }
+      await fs.promises.writeFile(destPath, writeBuffer)
 
       const stats = await fs.promises.stat(destPath)
       const fileType = getFileType(ext)

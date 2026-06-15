@@ -205,7 +205,7 @@ const OpenAIImagePage: FC<OpenAIImagePageProps> = ({ providerId, Options }) => {
     }
   }
 
-  const downloadImages = async (urls: string[]) => {
+  const downloadImages = async (urls: string[], prompt?: string) => {
     const downloadedFiles = await Promise.all(
       urls.map(async (url) => {
         try {
@@ -217,7 +217,7 @@ const OpenAIImagePage: FC<OpenAIImagePageProps> = ({ providerId, Options }) => {
             })
             return null
           }
-          return await window.api.file.downloadImage(url)
+          return await window.api.file.downloadImage(url, prompt)
         } catch (error) {
           logger.error('下载图像失败:', error as Error)
           if (
@@ -344,7 +344,7 @@ const OpenAIImagePage: FC<OpenAIImagePageProps> = ({ providerId, Options }) => {
       const base64s = data.data.filter((item) => item.b64_json).map((item) => item.b64_json)
 
       if (urls.length > 0) {
-        const validFiles = await downloadImages(urls)
+        const validFiles = await downloadImages(urls, prompt)
         await FileManager.addFiles(validFiles)
         updatePaintingState({ files: validFiles, urls })
       }
@@ -352,7 +352,7 @@ const OpenAIImagePage: FC<OpenAIImagePageProps> = ({ providerId, Options }) => {
       if (base64s?.length > 0) {
         const validFiles = await Promise.all(
           base64s.map(async (base64) => {
-            return await window.api.file.saveBase64Image(base64)
+            return await window.api.file.saveBase64Image(base64, prompt)
           })
         )
         await FileManager.addFiles(validFiles)
@@ -370,7 +370,7 @@ const OpenAIImagePage: FC<OpenAIImagePageProps> = ({ providerId, Options }) => {
   const handleRetry = async (painting: PaintingAction) => {
     setIsLoading(true)
     try {
-      const validFiles = await downloadImages(painting.urls)
+      const validFiles = await downloadImages(painting.urls, painting.prompt)
       await FileManager.addFiles(validFiles)
       updatePaintingState({ files: validFiles, urls: painting.urls })
     } catch (error) {

@@ -17,12 +17,12 @@ interface Props {
   isSingle?: boolean
 }
 
-async function downloadImageToLocal(imageSrc: string): Promise<FileMetadata | null> {
+async function downloadImageToLocal(imageSrc: string, prompt?: string): Promise<FileMetadata | null> {
   try {
     if (imageSrc.startsWith('data:')) {
-      return await window.api.file.saveBase64ImageLocal(imageSrc)
+      return await window.api.file.saveBase64ImageLocal(imageSrc, prompt)
     } else {
-      return await window.api.file.downloadImage(imageSrc)
+      return await window.api.file.downloadImage(imageSrc, prompt)
     }
   } catch (error) {
     logger.error('Download image to local failed:', error as Error)
@@ -69,10 +69,14 @@ function doLocalizeImages(blockId: string, store: ReturnType<typeof useAppStore>
   const newLocalFiles: (FileMetadata | null)[] = [
     ...(latestLocalFiles || latestBlock.metadata.generateImageResponse.images.map(() => null))
   ]
+  const prompt = latestBlock.metadata?.generateImageResponse?.prompt
 
   Promise.all(
     latestMissingIndices.map(async (index) => {
-      const file = await downloadImageToLocal(latestBlock.metadata!.generateImageResponse!.images[index])
+      const file = await downloadImageToLocal(
+        latestBlock.metadata!.generateImageResponse!.images[index],
+        prompt
+      )
       return { index, file }
     })
   ).then((results) => {

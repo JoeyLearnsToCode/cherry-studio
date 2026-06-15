@@ -129,7 +129,7 @@ const AihubmixPage: FC<{ Options: string[] }> = ({ Options }) => {
     }
   }
 
-  const downloadImages = async (urls: string[]) => {
+  const downloadImages = async (urls: string[], prompt?: string) => {
     const downloadedFiles = await Promise.all(
       urls.map(async (url) => {
         try {
@@ -141,7 +141,7 @@ const AihubmixPage: FC<{ Options: string[] }> = ({ Options }) => {
             })
             return null
           }
-          return await window.api.file.download(url)
+          return await window.api.file.download(url, undefined, prompt)
         } catch (error) {
           logger.error('下载图像失败:', error as Error)
           if (
@@ -214,7 +214,7 @@ const AihubmixPage: FC<{ Options: string[] }> = ({ Options }) => {
           if (base64s?.length > 0) {
             const validFiles = await Promise.all(
               base64s.map(async (base64) => {
-                return await window.api.file.saveBase64Image(base64)
+                return await window.api.file.saveBase64Image(base64, prompt)
               })
             )
             await FileManager.addFiles(validFiles)
@@ -300,7 +300,7 @@ const AihubmixPage: FC<{ Options: string[] }> = ({ Options }) => {
             const urls = data.data.map((item) => item.url)
 
             if (urls.length > 0) {
-              const validFiles = await downloadImages(urls)
+              const validFiles = await downloadImages(urls, prompt)
               await FileManager.addFiles(validFiles)
               updatePaintingState({ files: validFiles, urls })
             }
@@ -429,7 +429,7 @@ const AihubmixPage: FC<{ Options: string[] }> = ({ Options }) => {
 
           // Handle the downloaded images
           if (urls.length > 0) {
-            const validFiles = await downloadImages(urls)
+            const validFiles = await downloadImages(urls, prompt)
             await FileManager.addFiles(validFiles)
             updatePaintingState({ files: validFiles, urls })
           }
@@ -499,7 +499,7 @@ const AihubmixPage: FC<{ Options: string[] }> = ({ Options }) => {
           const base64s = data.output.b64_json.map((item) => item.bytesBase64)
           const validFiles = await Promise.all(
             base64s.map(async (base64) => {
-              return await window.api.file.saveBase64Image(base64)
+              return await window.api.file.saveBase64Image(base64, prompt)
             })
           )
           await FileManager.addFiles(validFiles)
@@ -510,7 +510,7 @@ const AihubmixPage: FC<{ Options: string[] }> = ({ Options }) => {
         const base64s = data.data.filter((item) => item.b64_json).map((item) => item.b64_json)
 
         if (urls.length > 0) {
-          const validFiles = await downloadImages(urls)
+          const validFiles = await downloadImages(urls, prompt)
           await FileManager.addFiles(validFiles)
           updatePaintingState({ files: validFiles, urls })
         }
@@ -518,7 +518,7 @@ const AihubmixPage: FC<{ Options: string[] }> = ({ Options }) => {
         if (base64s?.length > 0) {
           const validFiles = await Promise.all(
             base64s.map(async (base64) => {
-              return await window.api.file.saveBase64Image(base64)
+              return await window.api.file.saveBase64Image(base64, prompt)
             })
           )
           await FileManager.addFiles(validFiles)
@@ -537,7 +537,7 @@ const AihubmixPage: FC<{ Options: string[] }> = ({ Options }) => {
   const handleRetry = async (painting: PaintingAction) => {
     setIsLoading(true)
     try {
-      const validFiles = await downloadImages(painting.urls)
+      const validFiles = await downloadImages(painting.urls, painting.prompt)
       await FileManager.addFiles(validFiles)
       updatePaintingState({ files: validFiles, urls: painting.urls })
     } catch (error) {

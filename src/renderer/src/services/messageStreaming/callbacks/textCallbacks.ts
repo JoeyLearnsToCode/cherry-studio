@@ -1,7 +1,9 @@
 import { loggerService } from '@logger'
+import { selectMessagesForTopic } from '@renderer/store/newMessage'
 import { WebSearchSource } from '@renderer/types'
 import { CitationMessageBlock, MessageBlock, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import { createMainTextBlock } from '@renderer/utils/messageUtils/create'
+import { getMainTextContent } from '@renderer/utils/messageUtils/find'
 import { hasLocalizableImages, localizeMarkdownImages } from '@renderer/utils/markdown'
 
 import { BlockManager } from '../BlockManager'
@@ -12,11 +14,12 @@ interface TextCallbacksDependencies {
   blockManager: BlockManager
   getState: any
   assistantMsgId: string
+  topicId: string
   getCitationBlockId: () => string | null
 }
 
 export const createTextCallbacks = (deps: TextCallbacksDependencies) => {
-  const { blockManager, getState, assistantMsgId, getCitationBlockId } = deps
+  const { blockManager, getState, assistantMsgId, topicId, getCitationBlockId } = deps
 
   // 内部维护的状态
   let mainTextBlockId: string | null = null
@@ -71,8 +74,21 @@ export const createTextCallbacks = (deps: TextCallbacksDependencies) => {
         // 再 await 本地化图片，完成后更新 content
         // 组件 useEffect 通过 seenStreaming 跳过流式期间，不会重复下载
         if (hasLocalizableImages(finalText)) {
+          // 从对话历史提取 prompt 上下文用于 PNG iTXt 元数据（排除当前助手回复）
+          let mdPrompt: string | undefined
           try {
-            const { content: localizedContent } = await localizeMarkdownImages(finalText)
+            const state = getState()
+            const messages = selectMessagesForTopic(state, topicId)
+            const history = messages.filter((m: any) => m.id !== assistantMsgId).slice(-6)
+            mdPrompt = history
+              .map((m: any) => {
+                const role = m.role === 'user' ? 'user' : 'ai'
+                return `[${role}]:${getMainTextContent(m) || ''}`
+              })
+              .join('--==--')
+          } catch { /* prompt for iTXt is best-effort */ }
+          try {
+            const { content: localizedContent } = await localizeMarkdownImages(finalText, mdPrompt)
             if (localizedContent !== finalText) {
               blockManager.smartBlockUpdate(
                 blockId,

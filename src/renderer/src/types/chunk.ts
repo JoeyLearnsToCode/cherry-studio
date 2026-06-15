@@ -159,7 +159,7 @@ export interface ImageCompleteChunk {
   /**
    * The image content of the chunk
    */
-  image?: { type: 'url' | 'base64'; images: string[] }
+  image?: { type: 'url' | 'base64'; images: string[]; prompt?: string }
 }
 
 export interface ThinkingStartChunk {
