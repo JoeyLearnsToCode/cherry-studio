@@ -122,7 +122,9 @@ jobs:
 
       - name: Build Windows
         if: matrix.os == 'windows-latest'
+        shell: powershell
         run: |
+          Move-Item node_modules/selection-hook/binding.gyp node_modules/selection-hook/binding.gyp.bak -Force
           yarn build:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
