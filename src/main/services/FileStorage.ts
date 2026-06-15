@@ -574,7 +574,7 @@ class FileStorage {
 
       let writeBuffer: Buffer = buffer
       if (prompt) {
-        writeBuffer = await this.writeExifToPng(buffer, prompt, destPath)
+        writeBuffer = await this.writeItextToPng(buffer, prompt, destPath)
       }
       await fs.promises.writeFile(destPath, writeBuffer)
 
@@ -613,32 +613,59 @@ class FileStorage {
     return prompt.length > maxChars ? prompt.slice(-maxChars) : prompt
   }
 
-  private async writeExifToPng(buffer: Buffer, prompt: string, destPath?: string): Promise<Buffer> {
+  private static crc32(buf: Buffer): number {
+    let crc = 0xFFFFFFFF
+    for (let i = 0; i < buf.length; i++) {
+      crc ^= buf[i]
+      for (let j = 0; j < 8; j++) {
+        crc = (crc >>> 1) ^ (crc & 1 ? 0xEDB88320 : 0)
+      }
+    }
+    return (crc ^ 0xFFFFFFFF) >>> 0
+  }
+
+  private static createPngItextChunk(keyword: string, text: string): Buffer {
+    const keywordBuf = Buffer.from(keyword, 'latin1')
+    const textBuf = Buffer.from(text, 'utf8')
+    const data = Buffer.concat([
+      keywordBuf,
+      Buffer.from([0]),
+      Buffer.from([0]),
+      Buffer.from([0]),
+      Buffer.from([0]),
+      Buffer.from([0]),
+      textBuf
+    ])
+    const length = Buffer.alloc(4)
+    length.writeUInt32BE(data.length)
+    const type = Buffer.from('iTXt')
+    const crcData = Buffer.concat([type, data])
+    const crc = FileStorage.crc32(crcData)
+    const crcBuf = Buffer.alloc(4)
+    crcBuf.writeUInt32BE(crc)
+    return Buffer.concat([length, type, data, crcBuf])
+  }
+
+  private static addPngItextChunk(pngBuffer: Buffer, keyword: string, text: string): Buffer {
+    const textChunk = FileStorage.createPngItextChunk(keyword, text)
+    const iendOffset = pngBuffer.length - 12
+    if (iendOffset < 8) return pngBuffer
+    return Buffer.concat([pngBuffer.subarray(0, iendOffset), textChunk, pngBuffer.subarray(iendOffset)])
+  }
+
+  private async writeItextToPng(buffer: Buffer, prompt: string, destPath?: string): Promise<Buffer> {
     if (!FileStorage.isPng(buffer)) return buffer
-    // Always write debug file to diagnose prompt flow
     const txtContent = prompt ? FileStorage.truncatePrompt(prompt) : '(NO PROMPT PROVIDED)'
     if (destPath) {
       const txtPath = destPath.replace(/\.png$/i, '.txt')
-      try {
-        await fs.promises.writeFile(txtPath, txtContent, 'utf8')
-      } catch { /* debug file, ignore */ }
+      try { await fs.promises.writeFile(txtPath, txtContent, 'utf8') } catch { /* ignore */ }
     }
     if (!prompt) return buffer
     const truncated = FileStorage.truncatePrompt(prompt)
     try {
-      const sharp = require('sharp')
-      return await sharp(buffer)
-        .withMetadata({
-          exif: {
-            IFD0: {
-              ImageDescription: truncated
-            }
-          }
-        })
-        .png()
-        .toBuffer()
+      return FileStorage.addPngItextChunk(buffer, 'ImagenPrompt', truncated)
     } catch (error) {
-      logger.warn('Failed to write EXIF to PNG: ' + (error as Error).message)
+      logger.warn('Failed to write iTXt chunk: ' + (error as Error).message)
       return buffer
     }
   }
@@ -680,7 +707,7 @@ class FileStorage {
       const buffer = Buffer.from(await response.arrayBuffer())
       let writeBuffer: Buffer = buffer
       if (prompt) {
-        writeBuffer = await this.writeExifToPng(buffer, prompt, destPath)
+        writeBuffer = await this.writeItextToPng(buffer, prompt, destPath)
       }
       await fs.promises.writeFile(destPath, writeBuffer)
 
@@ -733,7 +760,7 @@ class FileStorage {
 
       let writeBuffer: Buffer = buffer
       if (prompt) {
-        writeBuffer = await this.writeExifToPng(buffer, prompt, destPath)
+        writeBuffer = await this.writeItextToPng(buffer, prompt, destPath)
       }
       await fs.promises.writeFile(destPath, writeBuffer)
 
@@ -1094,7 +1121,7 @@ class FileStorage {
       const buffer = Buffer.from(await response.arrayBuffer())
       let writeBuffer: Buffer = buffer
       if (prompt) {
-        writeBuffer = await this.writeExifToPng(buffer, prompt, destPath)
+        writeBuffer = await this.writeItextToPng(buffer, prompt, destPath)
       }
       await fs.promises.writeFile(destPath, writeBuffer)
 

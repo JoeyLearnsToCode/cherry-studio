@@ -42,15 +42,14 @@ export const ImageGenerationMiddleware: CompletionsMiddleware =
 
           const prompt = getMainTextContent(lastUserMessage)
 
-          // 构建多轮对话上下文作为 PNG EXIF 元数据
+          // 构建对话上下文作为 PNG iTXt 元数据
           const recentMessages = messages.slice(-6)
           const promptContext = recentMessages
             .map((m) => {
-              const role = m.role === 'user' ? '用户' : '助手'
-              const content = getMainTextContent(m) || '(空)'
-              return `[${role}]\n${content}`
+              const role = m.role === 'user' ? 'user' : 'ai'
+              return `[${role}]:${getMainTextContent(m) || ''}`
             })
-            .join('\n\n')
+            .join('--==--')
 
           let imageFiles: Blob[] = []
 

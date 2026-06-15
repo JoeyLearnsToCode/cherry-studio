@@ -74,19 +74,19 @@ export const createTextCallbacks = (deps: TextCallbacksDependencies) => {
         // 再 await 本地化图片，完成后更新 content
         // 组件 useEffect 通过 seenStreaming 跳过流式期间，不会重复下载
         if (hasLocalizableImages(finalText)) {
-          // 从最近用户消息提取 prompt 上下文用于 EXIF
+          // 从对话历史提取 prompt 上下文用于 PNG iTXt 元数据（排除当前助手回复）
           let mdPrompt: string | undefined
           try {
             const state = getState()
             const messages = selectMessagesForTopic(state, topicId)
-            const recent = messages.slice(-6)
-            mdPrompt = recent
+            const history = messages.filter((m: any) => m.id !== assistantMsgId).slice(-6)
+            mdPrompt = history
               .map((m: any) => {
-                const role = m.role === 'user' ? '用户' : '助手'
-                return `[${role}]\n${getMainTextContent(m) || ''}`
+                const role = m.role === 'user' ? 'user' : 'ai'
+                return `[${role}]:${getMainTextContent(m) || ''}`
               })
-              .join('\n\n')
-          } catch { /* prompt for EXIF is best-effort */ }
+              .join('--==--')
+          } catch { /* prompt for iTXt is best-effort */ }
           try {
             const { content: localizedContent } = await localizeMarkdownImages(finalText, mdPrompt)
             if (localizedContent !== finalText) {
